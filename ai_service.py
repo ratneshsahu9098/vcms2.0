@@ -57,7 +57,9 @@ def test_api_connection():
         r = requests.post(OPENROUTER_URL, json=payload, headers=get_headers(), timeout=60)
         elapsed = round(time.time() - start, 1)
         if r.status_code == 200:
-            reply = r.json()["choices"][0]["message"]["content"].strip()
+            data = r.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content")
+            reply = content.strip() if content else str(data)[:200]
             return {"ok": True, "elapsed": elapsed, "model": model, "reply": reply}
         elif r.status_code == 401:
             return {"ok": False, "error": "Invalid API key (401 Unauthorized)", "elapsed": elapsed}
@@ -123,7 +125,9 @@ def test_api_connection_debug():
         debug["timing"] = {"total_seconds": total}
 
         if r.status_code == 200:
-            reply = r.json()["choices"][0]["message"]["content"].strip()
+            data = r.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content")
+            reply = content.strip() if content else str(data)[:200]
             return {"ok": True, "debug": debug, "reply": reply, "elapsed": total}
         else:
             return {"ok": False, "debug": debug, "elapsed": total}
