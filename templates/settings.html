@@ -21,9 +21,107 @@
       <span class="text-muted">{{ config.SQLALCHEMY_DATABASE_URI }}</span>
     </div>
   </div>
-  <p class="text-muted mt-3">
-    Credentials and thresholds are configured in <code>config.py</code> or via environment variables
-    (<code>VCMS_ADMIN_USER</code>, <code>VCMS_ADMIN_PASSWORD</code>, <code>VCMS_LOGIN_REQUIRED</code>).
-  </p>
 </div>
+
+<div class="panel" style="margin-top:20px;">
+  <h3 class="panel-title"><i class="fa-solid fa-robot"></i> AI Settings (OpenRouter)</h3>
+  <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;">
+    Configure your OpenRouter API key and model. Get a free key at
+    <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a>
+  </p>
+  <form method="POST" id="settingsForm">
+    <div class="form-grid">
+      <div class="form-group form-group-full">
+        <label>API Key</label>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <input type="password" name="openrouter_api_key" id="apiKeyInput"
+                 class="form-control" style="flex:1;"
+                 value="{{ ai_settings.openrouter_api_key or '' }}"
+                 placeholder="sk-or-v1-...">
+          <button type="button" class="btn btn-outline-secondary" onclick="toggleKey()" title="Show/Hide key">
+            <i class="fa-solid fa-eye" id="eyeIcon"></i>
+          </button>
+        </div>
+      </div>
+      <div class="form-group form-group-full">
+        <label>Model</label>
+        <input type="text" name="openrouter_model" id="modelInput" class="form-control"
+               value="{{ ai_settings.openrouter_model or '' }}"
+               placeholder="nvidia/llama-nemotron-embed-vl-1b-v2:free">
+        <small style="color:var(--text-muted);">Browse models at <a href="https://openrouter.ai/models" target="_blank">openrouter.ai/models</a></small>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> Save Settings</button>
+      <button type="button" class="btn btn-outline-secondary" id="testBtn" onclick="testApi()">
+        <i class="fa-solid fa-plug"></i> Test Connection
+      </button>
+      {% if ai_settings.openrouter_api_key %}
+      <span class="badge-status status-green" style="margin-left:8px;"><i class="fa-solid fa-check-circle"></i> API key configured</span>
+      {% else %}
+      <span class="badge-status status-red" style="margin-left:8px;"><i class="fa-solid fa-xmark-circle"></i> No API key set</span>
+      {% endif %}
+    </div>
+  </form>
+  <div id="testResult" style="display:none; margin-top:16px; padding:14px; border-radius:8px; font-size:0.9rem;"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleKey() {
+  const input = document.getElementById('apiKeyInput');
+  const icon = document.getElementById('eyeIcon');
+  if (input.type === 'password') {
+    input.type = 'text';
+    icon.classList.replace('fa-eye', 'fa-eye-slash');
+  } else {
+    input.type = 'password';
+    icon.classList.replace('fa-eye-slash', 'fa-eye');
+  }
+}
+
+function testApi() {
+  const btn = document.getElementById('testBtn');
+  const result = document.getElementById('testResult');
+  const apiKey = document.getElementById('apiKeyInput').value;
+  const model = document.getElementById('modelInput').value;
+
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Testing...';
+  result.style.display = 'none';
+
+  fetch('{{ url_for("test_api") }}', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'openrouter_api_key=' + encodeURIComponent(apiKey) + '&openrouter_model=' + encodeURIComponent(model)
+  })
+  .then(r => r.json())
+  .then(data => {
+    result.style.display = 'block';
+    if (data.ok) {
+      result.style.background = 'rgba(34,197,94,0.1)';
+      result.style.border = '1px solid rgba(34,197,94,0.3)';
+      result.style.color = 'var(--green)';
+      result.innerHTML = '<i class="fa-solid fa-circle-check"></i> <strong>API is working!</strong> Model: ' + data.model + ' | Response time: ' + data.elapsed + 's | AI says: "' + data.reply + '"';
+    } else {
+      result.style.background = 'rgba(239,68,68,0.1)';
+      result.style.border = '1px solid rgba(239,68,68,0.3)';
+      result.style.color = 'var(--red)';
+      result.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> <strong>API test failed:</strong> ' + data.error;
+    }
+  })
+  .catch(err => {
+    result.style.display = 'block';
+    result.style.background = 'rgba(239,68,68,0.1)';
+    result.style.border = '1px solid rgba(239,68,68,0.3)';
+    result.style.color = 'var(--red)';
+    result.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> <strong>Network error:</strong> ' + err;
+  })
+  .finally(() => {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-plug"></i> Test Connection';
+  });
+}
+</script>
 {% endblock %}

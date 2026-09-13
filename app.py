@@ -842,10 +842,40 @@ def register_routes(app):
 
     # ---- Settings ------------------------------------------------------------
 
-    @app.route("/settings")
+    @app.route("/settings", methods=["GET", "POST"])
     @login_required
     def settings():
-        return render_template("settings.html")
+        if request.method == "POST":
+            api_key = request.form.get("openrouter_api_key", "").strip()
+            model = request.form.get("openrouter_model", "").strip()
+            from utils import load_settings, save_settings
+            current = load_settings()
+            if api_key is not None:
+                current["openrouter_api_key"] = api_key
+            if model:
+                current["openrouter_model"] = model
+            save_settings(current)
+            flash("Settings saved successfully.", "success")
+            return redirect(url_for("settings"))
+
+        from utils import load_settings
+        ai_settings = load_settings()
+        return render_template("settings.html", ai_settings=ai_settings)
+
+    @app.route("/settings/test-api", methods=["POST"])
+    @login_required
+    def test_api():
+        from utils import load_settings, save_settings
+        api_key = request.form.get("openrouter_api_key", "").strip()
+        model = request.form.get("openrouter_model", "").strip()
+        current = load_settings()
+        if api_key is not None:
+            current["openrouter_api_key"] = api_key
+        if model:
+            current["openrouter_model"] = model
+        save_settings(current)
+        result = ai_service.test_api_connection()
+        return jsonify(result)
 
     # ---- Tax Details ----------------------------------------------------------
 

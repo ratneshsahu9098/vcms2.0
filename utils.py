@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 from datetime import datetime, date
@@ -91,8 +92,25 @@ def list_backups(backup_folder):
     if not os.path.isdir(backup_folder):
         return []
     files = [f for f in os.listdir(backup_folder) if f.endswith(".db")]
-    files.sort(reverse=True)
-    return files
+    backups = []
+    for f in files:
+        path = os.path.join(backup_folder, f)
+        stat = os.stat(path)
+        size = stat.st_size
+        if size >= 1024 * 1024:
+            size_str = f"{size / (1024 * 1024):.1f} MB"
+        elif size >= 1024:
+            size_str = f"{size / 1024:.1f} KB"
+        else:
+            size_str = f"{size} B"
+        created = datetime.fromtimestamp(stat.st_mtime)
+        backups.append({
+            "name": f,
+            "created": created.strftime("%d %b %Y, %I:%M %p"),
+            "size": size_str,
+        })
+    backups.sort(key=lambda x: x["name"], reverse=True)
+    return backups
 
 
 def whatsapp_message(vehicle, document_label, expiry_date):
@@ -246,3 +264,30 @@ def generate_vehicle_qr(vehicle):
     img.save(buffer, format="PNG")
     buffer.seek(0)
     return buffer
+
+
+# ---------------------------------------------------------------------------
+# Settings persistence
+# ---------------------------------------------------------------------------
+
+SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
+
+DEFAULT_SETTINGS = {
+    "openrouter_api_key": "",
+    "openrouter_model": "nvidia/llama-nemotron-embed-vl-1b-v2:free",
+}
+
+
+def load_settings():
+    if os.path.exists(SETTINGS_FILE):
+        with open(SETTINGS_FILE, "r") as f:
+            saved = json.load(f)
+            settings = dict(DEFAULT_SETTINGS)
+            settings.update(saved)
+            return settings
+    return dict(DEFAULT_SETTINGS)
+
+
+def save_settings(settings):
+    with open(SETTINGS_FILE, "w") as f:
+        json.dump(settings, f, indent=2)

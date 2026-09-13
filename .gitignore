@@ -3,5 +3,6 @@ venv/
 uploads/
 backups/
 exports/
+settings.json
 *.db
 *.pyc

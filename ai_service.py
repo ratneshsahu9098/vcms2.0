@@ -1,18 +1,30 @@
 import json
+import os
 import requests
 from datetime import date, timedelta
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 
+def _get_settings():
+    from utils import load_settings
+    return load_settings()
+
+
 def get_api_key():
-    from config import Config
-    return Config.OPENROUTER_API_KEY
+    settings = _get_settings()
+    key = settings.get("openrouter_api_key", "")
+    if not key:
+        key = os.environ.get("VCMS_OPENROUTER_KEY", "")
+    return key
 
 
 def get_model():
-    from config import Config
-    return Config.OPENROUTER_MODEL
+    settings = _get_settings()
+    model = settings.get("openrouter_model", "")
+    if not model:
+        model = os.environ.get("VCMS_OPENROUTER_MODEL", "nvidia/llama-nemotron-embed-vl-1b-v2:free")
+    return model
 
 
 def get_headers():
@@ -26,6 +38,39 @@ def get_headers():
 
 def check_api_key():
     return bool(get_api_key().strip())
+
+
+def test_api_connection():
+    import time
+    api_key = get_api_key()
+    if not api_key:
+        return {"ok": False, "error": "No API key configured"}
+    model = get_model()
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": "Say hi in 3 words."}],
+        "temperature": 0.3,
+        "max_tokens": 20,
+    }
+    start = time.time()
+    try:
+        r = requests.post(OPENROUTER_URL, json=payload, headers=get_headers(), timeout=30)
+        elapsed = round(time.time() - start, 1)
+        if r.status_code == 200:
+            reply = r.json()["choices"][0]["message"]["content"].strip()
+            return {"ok": True, "elapsed": elapsed, "model": model, "reply": reply}
+        elif r.status_code == 401:
+            return {"ok": False, "error": "Invalid API key (401 Unauthorized)", "elapsed": elapsed}
+        elif r.status_code == 429:
+            return {"ok": False, "error": "Rate limited (429). Try again later.", "elapsed": elapsed}
+        else:
+            return {"ok": False, "error": f"HTTP {r.status_code}: {r.text[:200]}", "elapsed": elapsed}
+    except requests.exceptions.ConnectionError:
+        return {"ok": False, "error": "Cannot connect to OpenRouter. Check your internet."}
+    except requests.exceptions.Timeout:
+        return {"ok": False, "error": "Request timed out (30s)."}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 def chat_completion(messages, model=None):

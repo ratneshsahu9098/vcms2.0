@@ -14,25 +14,36 @@
 
   <h4 class="report-group-title">Available Backups</h4>
   {% if backups %}
-  <table class="table-main">
-    <thead><tr><th>Backup File</th><th>Actions</th></tr></thead>
-    <tbody>
-      {% for b in backups %}
-      <tr>
-        <td>{{ b }}</td>
-        <td class="actions-cell">
-          <a href="{{ url_for('download_backup', name=b) }}" title="Download"><i class="fa-solid fa-download"></i></a>
-          <form method="POST" class="inline-form"
-                onsubmit="return confirm('Restore database from {{ b }}? Current data will be replaced.');">
-            <input type="hidden" name="action" value="restore">
-            <input type="hidden" name="backup_name" value="{{ b }}">
-            <button type="submit" title="Restore"><i class="fa-solid fa-rotate-left"></i></button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="table-wrap">
+    <table class="table-main">
+      <thead>
+        <tr>
+          <th>Backup File</th>
+          <th>Created</th>
+          <th>Size</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in backups %}
+        <tr>
+          <td style="font-weight:600; color:#fff;">{{ b.name }}</td>
+          <td>{{ b.created }}</td>
+          <td>{{ b.size }}</td>
+          <td class="actions-cell">
+            <a href="{{ url_for('download_backup', name=b.name) }}" title="Download"><i class="fa-solid fa-download"></i></a>
+            <form method="POST" class="inline-form"
+                  onsubmit="return confirm('Restore database from {{ b.name }}? Current data will be replaced.');">
+              <input type="hidden" name="action" value="restore">
+              <input type="hidden" name="backup_name" value="{{ b.name }}">
+              <button type="submit" title="Restore"><i class="fa-solid fa-rotate-left"></i></button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
   {% else %}
   <p class="empty-hint">No backups created yet.</p>
   {% endif %}
