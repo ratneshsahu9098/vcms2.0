@@ -4,136 +4,177 @@
 
 {% block content %}
 <form method="POST" class="form-card">
-  <div class="form-grid">
-    <div class="form-group">
-      <label>Vehicle Number *</label>
-      <input type="text" name="vehicle_number" class="form-control" value="{{ form.get('vehicle_number','') }}" required>
-    </div>
-    <div class="form-group">
-      <label>Chassis Number *</label>
-      <input type="text" name="chassis_number" class="form-control" value="{{ form.get('chassis_number','') }}" required>
-    </div>
-    <div class="form-group">
-      <label>Engine Number</label>
-      <input type="text" name="engine_number" class="form-control" value="{{ form.get('engine_number','') }}">
-    </div>
-    <div class="form-group">
-      <label>Owner Name *</label>
-      <input type="text" name="owner_name" class="form-control" value="{{ form.get('owner_name','') }}" required>
-    </div>
-    <div class="form-group">
-      <label>Mobile Number *</label>
-      <input type="text" name="mobile_number" class="form-control" value="{{ form.get('mobile_number','') }}" required>
-    </div>
-    <div class="form-group">
-      <label>Vehicle Type</label>
-      <select name="vehicle_type" class="form-select">
-        <option value="">Select type</option>
-        {% for t in ['Truck','Bus','Car','Trailer','Tanker','Auto','Two Wheeler'] %}
-        <option value="{{ t }}" {{ 'selected' if form.get('vehicle_type')==t }}>{{ t }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="form-group">
-      <label>District</label>
-      <input type="text" name="district" class="form-control" value="{{ form.get('district','') }}">
-    </div>
-    <div class="form-group">
-      <label>Registration Date</label>
-      <input type="date" name="registration_date" class="form-control" value="{{ form.get('registration_date','') }}">
-    </div>
 
-    <div class="form-group">
-      <label>PUC Expiry</label>
-      <input type="date" name="puc_expiry" class="form-control" value="{{ form.get('puc_expiry','') }}">
-    </div>
-    <div class="form-group">
-      <label>Fitness Expiry</label>
-      <input type="date" name="fitness_expiry" class="form-control" value="{{ form.get('fitness_expiry','') }}">
-    </div>
-    <div class="form-group">
-      <label>Permit Expiry</label>
-      <input type="date" name="permit_expiry" class="form-control" value="{{ form.get('permit_expiry','') }}">
-    </div>
-    <div class="form-group">
-      <label>Tax From</label>
-      <input type="date" name="tax_from" class="form-control" id="tax_from" value="{{ form.get('tax_from','') }}">
-    </div>
-    <div class="form-group">
-      <label>Tax Expiry (Valid Upto)</label>
-      <input type="date" name="tax_expiry" class="form-control" id="tax_expiry" value="{{ form.get('tax_expiry','') }}">
-    </div>
-    <div class="form-group">
-      <label>Tax Mode</label>
-      <select name="tax_mode" id="tax_mode" class="form-select">
-        <option value="">Select mode</option>
-        {% for m in ['Monthly (M)', 'Quarterly (Q)', 'Half-Yearly (HY)', 'Yearly (Y)', 'Lifetime (LTT)'] %}
-        <option value="{{ m }}" {{ 'selected' if form.get('tax_mode')==m }}>{{ m }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="form-group">
-      <label>Tax Amount</label>
-      <input type="number" step="0.01" name="tax_amount" class="form-control" value="{{ form.get('tax_amount','') }}">
-    </div>
-    <div class="form-group">
-      <label>Insurance Expiry</label>
-      <input type="date" name="insurance_expiry" class="form-control" value="{{ form.get('insurance_expiry','') }}">
-    </div>
-    <div class="form-group">
-      <label>National Permit Expiry</label>
-      <input type="date" name="national_permit_expiry" class="form-control" value="{{ form.get('national_permit_expiry','') }}">
-    </div>
-    <div class="form-group">
-      <label>State Permit Expiry</label>
-      <input type="date" name="state_permit_expiry" class="form-control" value="{{ form.get('state_permit_expiry','') }}">
-    </div>
-
-    <div class="form-group">
-      <label>Pollution Certificate Number</label>
-      <input type="text" name="pollution_certificate_number" class="form-control" value="{{ form.get('pollution_certificate_number','') }}">
-    </div>
-    <div class="form-group">
-      <label>Insurance Company</label>
-      <input type="text" name="insurance_company" class="form-control" value="{{ form.get('insurance_company','') }}">
-    </div>
-    <div class="form-group">
-      <label>Policy Number</label>
-      <input type="text" name="policy_number" class="form-control" value="{{ form.get('policy_number','') }}">
-    </div>
-
-    <div class="form-group form-group-full">
-      <label>Remarks</label>
-      <textarea name="remarks" class="form-control" rows="3">{{ form.get('remarks','') }}</textarea>
-    </div>
-  </div>
-
-  <div class="tax-quick-pay">
-    <h4 class="section-heading"><i class="fa-solid fa-bolt"></i> Quick Tax Pay & Extend</h4>
-    <p class="text-muted">Select frequency to auto-extend tax period from the current expiry date.</p>
+  <div class="form-section">
+    <h4 class="form-section-title"><i class="fa-solid fa-car-side"></i> Vehicle Details</h4>
     <div class="form-grid">
       <div class="form-group">
-        <label>Extend By</label>
-        <select id="tax_extend_freq" class="form-select">
-          <option value="">Select frequency</option>
-          <option value="monthly">Monthly</option>
-          <option value="quarterly">Quarterly</option>
-          <option value="halfyearly">Half-Yearly</option>
-          <option value="yearly">Yearly</option>
+        <label>Vehicle Number *</label>
+        <input type="text" name="vehicle_number" class="form-control" value="{{ form.get('vehicle_number','') }}" required style="text-transform:uppercase;">
+      </div>
+      <div class="form-group">
+        <label>Chassis Number *</label>
+        <input type="text" name="chassis_number" class="form-control" value="{{ form.get('chassis_number','') }}" required style="text-transform:uppercase;">
+      </div>
+      <div class="form-group">
+        <label>Engine Number</label>
+        <input type="text" name="engine_number" class="form-control" value="{{ form.get('engine_number','') }}" style="text-transform:uppercase;">
+      </div>
+      <div class="form-group">
+        <label>Vehicle Type</label>
+        <select name="vehicle_type" class="form-select">
+          <option value="">Select type</option>
+          {% for t in ['Truck','Bus','Car','Trailer','Tanker','Auto','Two Wheeler','Tempo','Tractor','Other'] %}
+          <option value="{{ t }}" {{ 'selected' if form.get('vehicle_type')==t }}>{{ t }}</option>
+          {% endfor %}
         </select>
       </div>
       <div class="form-group">
-        <label>New Tax From</label>
-        <input type="text" id="tax_new_from" class="form-control" readonly placeholder="—">
+        <label>District</label>
+        <input type="text" name="district" class="form-control" value="{{ form.get('district','') }}" list="districtList" placeholder="Type to search...">
+        <datalist id="districtList">
+          {% for d in districts %}
+          <option value="{{ d }}">
+          {% endfor %}
+        </datalist>
       </div>
       <div class="form-group">
-        <label>New Tax Expiry</label>
-        <input type="text" id="tax_new_expiry" class="form-control" readonly placeholder="—">
+        <label>Registration Date</label>
+        <input type="date" name="registration_date" class="form-control" value="{{ form.get('registration_date','') }}">
       </div>
-      <div class="form-group tax-quick-actions">
-        <button type="button" id="btn_apply_tax" class="btn btn-success"><i class="fa-solid fa-check"></i> Apply</button>
-        <button type="button" id="btn_clear_tax" class="btn btn-outline-secondary"><i class="fa-solid fa-xmark"></i> Clear</button>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <h4 class="form-section-title"><i class="fa-solid fa-user"></i> Owner Details</h4>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Owner Name *</label>
+        <input type="text" name="owner_name" class="form-control" value="{{ form.get('owner_name','') }}" required>
       </div>
+      <div class="form-group">
+        <label>Mobile Number *</label>
+        <input type="text" name="mobile_number" class="form-control" value="{{ form.get('mobile_number','') }}" required maxlength="10" pattern="[6-9]\d{9}" title="Enter valid 10-digit Indian mobile number">
+        <span class="field-hint">10-digit number starting with 6-9</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <h4 class="form-section-title"><i class="fa-solid fa-file-shield"></i> Document Expiry</h4>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>PUC Expiry</label>
+        <input type="date" name="puc_expiry" class="form-control" value="{{ form.get('puc_expiry','') }}">
+        <span class="field-hint">Pollution Under Control certificate</span>
+      </div>
+      <div class="form-group">
+        <label>Fitness Expiry</label>
+        <input type="date" name="fitness_expiry" class="form-control" value="{{ form.get('fitness_expiry','') }}">
+        <span class="field-hint">Fitness certificate validity</span>
+      </div>
+      <div class="form-group">
+        <label>Permit Expiry</label>
+        <input type="date" name="permit_expiry" class="form-control" value="{{ form.get('permit_expiry','') }}">
+        <span class="field-hint">Vehicle permit validity</span>
+      </div>
+      <div class="form-group">
+        <label>National Permit Expiry</label>
+        <input type="date" name="national_permit_expiry" class="form-control" value="{{ form.get('national_permit_expiry','') }}">
+        <span class="field-hint">For interstate transport</span>
+      </div>
+      <div class="form-group">
+        <label>State Permit Expiry</label>
+        <input type="date" name="state_permit_expiry" class="form-control" value="{{ form.get('state_permit_expiry','') }}">
+        <span class="field-hint">Within-state permit</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <h4 class="form-section-title"><i class="fa-solid fa-indian-rupee-sign"></i> Tax Info</h4>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Tax From</label>
+        <input type="date" name="tax_from" class="form-control" id="tax_from" value="{{ form.get('tax_from','') }}">
+        <span class="field-hint">Start of tax period</span>
+      </div>
+      <div class="form-group">
+        <label>Tax Expiry (Valid Upto)</label>
+        <input type="date" name="tax_expiry" class="form-control" id="tax_expiry" value="{{ form.get('tax_expiry','') }}">
+        <span class="field-hint">End of tax period</span>
+      </div>
+      <div class="form-group">
+        <label>Tax Mode</label>
+        <select name="tax_mode" id="tax_mode" class="form-select">
+          <option value="">Select mode</option>
+          {% for m in ['Monthly (M)', 'Quarterly (Q)', 'Half-Yearly (HY)', 'Yearly (Y)', 'Lifetime (LTT)'] %}
+          <option value="{{ m }}" {{ 'selected' if form.get('tax_mode')==m }}>{{ m }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Tax Amount</label>
+        <input type="number" step="0.01" name="tax_amount" class="form-control" value="{{ form.get('tax_amount','') }}">
+      </div>
+    </div>
+
+    <div class="tax-quick-pay">
+      <h4 class="section-heading"><i class="fa-solid fa-bolt"></i> Quick Tax Pay & Extend</h4>
+      <p class="text-muted">Select frequency to auto-extend tax period from the current expiry date.</p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Extend By</label>
+          <select id="tax_extend_freq" class="form-select">
+            <option value="">Select frequency</option>
+            <option value="monthly">Monthly</option>
+            <option value="quarterly">Quarterly</option>
+            <option value="halfyearly">Half-Yearly</option>
+            <option value="yearly">Yearly</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>New Tax From</label>
+          <input type="text" id="tax_new_from" class="form-control" readonly placeholder="—">
+        </div>
+        <div class="form-group">
+          <label>New Tax Expiry</label>
+          <input type="text" id="tax_new_expiry" class="form-control" readonly placeholder="—">
+        </div>
+        <div class="form-group tax-quick-actions">
+          <button type="button" id="btn_apply_tax" class="btn btn-success"><i class="fa-solid fa-check"></i> Apply</button>
+          <button type="button" id="btn_clear_tax" class="btn btn-outline-secondary"><i class="fa-solid fa-xmark"></i> Clear</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <h4 class="form-section-title"><i class="fa-solid fa-shield-halved"></i> Insurance Info</h4>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Insurance Expiry</label>
+        <input type="date" name="insurance_expiry" class="form-control" value="{{ form.get('insurance_expiry','') }}">
+      </div>
+      <div class="form-group">
+        <label>Insurance Company</label>
+        <input type="text" name="insurance_company" class="form-control" value="{{ form.get('insurance_company','') }}">
+      </div>
+      <div class="form-group">
+        <label>Policy Number</label>
+        <input type="text" name="policy_number" class="form-control" value="{{ form.get('policy_number','') }}">
+      </div>
+      <div class="form-group">
+        <label>Pollution Certificate Number</label>
+        <input type="text" name="pollution_certificate_number" class="form-control" value="{{ form.get('pollution_certificate_number','') }}">
+      </div>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <h4 class="form-section-title"><i class="fa-solid fa-comment"></i> Remarks</h4>
+    <div class="form-group form-group-full">
+      <textarea name="remarks" class="form-control" rows="3" placeholder="Any additional notes...">{{ form.get('remarks','') }}</textarea>
     </div>
   </div>
 
@@ -146,9 +187,23 @@
     </form>
   </div>
 </form>
+{% endblock %}
 
+{% block scripts %}
+<style>
+  .form-section { margin-bottom:24px; padding-bottom:20px; border-bottom:1px solid var(--border); }
+  .form-section:last-of-type { border-bottom:none; }
+  .form-section-title {
+    font-size:0.95rem; font-weight:700; color:#fff; margin:0 0 14px;
+    display:flex; align-items:center; gap:8px;
+  }
+  .form-section-title i { color:var(--blue); font-size:0.9rem; }
+  .field-hint { display:block; font-size:0.78rem; color:var(--text-muted); margin-top:3px; }
+  [data-theme="light"] .form-section-title { color:#1a1d26; }
+</style>
 <script>
 (function() {
+  const MONTHS = { monthly: 1, quarterly: 3, halfyearly: 6, yearly: 12 };
   const taxFrom = document.getElementById('tax_from');
   const taxExpiry = document.getElementById('tax_expiry');
   const taxMode = document.getElementById('tax_mode');
@@ -158,23 +213,17 @@
   const btnApply = document.getElementById('btn_apply_tax');
   const btnClear = document.getElementById('btn_clear_tax');
 
-  const MONTHS = { monthly: 1, quarterly: 3, halfyearly: 6, yearly: 12 };
-
   freq.addEventListener('change', function() {
     const modeMap = { monthly: 'Monthly (M)', quarterly: 'Quarterly (Q)', halfyearly: 'Half-Yearly (HY)', yearly: 'Yearly (Y)' };
     if (modeMap[this.value]) taxMode.value = modeMap[this.value];
-
     const base = taxExpiry.value ? new Date(taxExpiry.value) : new Date();
-    const days = base.getDate();
     const from = new Date(base);
     from.setDate(from.getDate() + 1);
-
     const to = new Date(from);
     to.setMonth(to.getMonth() + (MONTHS[this.value] || 3));
     to.setDate(to.getDate() - 1);
-
-    newFrom.value = formatDate(from);
-    newExpiry.value = formatDate(to);
+    newFrom.value = fmt(from);
+    newExpiry.value = fmt(to);
   });
 
   btnApply.addEventListener('click', function() {
@@ -189,7 +238,7 @@
     newExpiry.value = '';
   });
 
-  function formatDate(d) {
+  function fmt(d) {
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
   }
 })();

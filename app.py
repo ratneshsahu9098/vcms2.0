@@ -261,7 +261,8 @@ def register_routes(app):
             if errors:
                 for e in errors:
                     flash(e, "error")
-                return render_template("add_vehicle.html", form=request.form)
+                districts = [r[0] for r in db.session.query(Vehicle.district).distinct() if r[0]]
+                return render_template("add_vehicle.html", form=request.form, districts=districts)
 
             sr_no = request.form.get("sr_no", "").strip()
             if not sr_no:
@@ -302,7 +303,8 @@ def register_routes(app):
             flash(f"Vehicle {vehicle.vehicle_number} added successfully.", "success")
             return redirect(url_for("vehicle_list"))
 
-        return render_template("add_vehicle.html", form={})
+        districts = [r[0] for r in db.session.query(Vehicle.district).distinct() if r[0]]
+        return render_template("add_vehicle.html", form={}, districts=districts)
 
     # ---- Edit vehicle --------------------------------------------------------
 
@@ -316,7 +318,8 @@ def register_routes(app):
             if errors:
                 for e in errors:
                     flash(e, "error")
-                return render_template("edit_vehicle.html", vehicle=vehicle, form=request.form)
+                districts = [r[0] for r in db.session.query(Vehicle.district).distinct() if r[0]]
+                return render_template("edit_vehicle.html", vehicle=vehicle, form=request.form, districts=districts)
 
             vehicle.vehicle_number = request.form["vehicle_number"].strip().upper()
             vehicle.chassis_number = request.form["chassis_number"].strip().upper()
@@ -346,7 +349,8 @@ def register_routes(app):
             flash(f"Vehicle {vehicle.vehicle_number} updated successfully.", "success")
             return redirect(url_for("vehicle_list"))
 
-        return render_template("edit_vehicle.html", vehicle=vehicle, form=vehicle.to_dict())
+        districts = [r[0] for r in db.session.query(Vehicle.district).distinct() if r[0]]
+        return render_template("edit_vehicle.html", vehicle=vehicle, form=vehicle.to_dict(), districts=districts)
 
     @app.route("/vehicles/delete-all", methods=["POST"])
     @login_required
@@ -952,6 +956,19 @@ def register_routes(app):
     def api_vehicle(vehicle_id):
         vehicle = Vehicle.query.get_or_404(vehicle_id)
         return jsonify(vehicle.to_dict())
+
+    @app.route("/api/check-duplicate")
+    @login_required
+    def check_duplicate():
+        field = request.args.get("field", "")
+        value = request.args.get("value", "").strip().upper()
+        exclude_id = request.args.get("exclude_id", type=int)
+        if not field or not value:
+            return jsonify({"exists": False})
+        query = Vehicle.query.filter(getattr(Vehicle, field) == value)
+        if exclude_id:
+            query = query.filter(Vehicle.id != exclude_id)
+        return jsonify({"exists": query.first() is not None})
 
     # ---- AI Chat Assistant --------------------------------------------------
 
