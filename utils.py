@@ -30,20 +30,41 @@ def parse_date(value):
 
 
 def allowed_file(filename, allowed_extensions):
-    return "." in filename and filename.rsplit(".", 1)[1].lower() in allowed_extensions
+    return filename and "." in filename and filename.rsplit(".", 1)[1].lower() in allowed_extensions
 
 
 IMPORT_COLUMN_MAP = {
     "vehicle number": "vehicle_number",
     "chassis number": "chassis_number",
+    "engine number": "engine_number",
     "owner name": "owner_name",
     "phone": "mobile_number",
     "mobile number": "mobile_number",
+    "vehicle type": "vehicle_type",
+    "district": "district",
+    "registration date": "registration_date",
     "puc": "puc_expiry",
+    "puc expiry": "puc_expiry",
     "fitness": "fitness_expiry",
+    "fitness expiry": "fitness_expiry",
     "permit": "permit_expiry",
+    "permit expiry": "permit_expiry",
     "tax": "tax_expiry",
+    "tax expiry": "tax_expiry",
+    "tax from": "tax_from",
+    "tax mode": "tax_mode",
+    "tax amount": "tax_amount",
     "insurance": "insurance_expiry",
+    "insurance expiry": "insurance_expiry",
+    "national permit": "national_permit_expiry",
+    "national permit expiry": "national_permit_expiry",
+    "state permit": "state_permit_expiry",
+    "state permit expiry": "state_permit_expiry",
+    "pollution certificate number": "pollution_certificate_number",
+    "pollution cert no": "pollution_certificate_number",
+    "insurance company": "insurance_company",
+    "policy number": "policy_number",
+    "remarks": "remarks",
 }
 
 
@@ -113,7 +134,6 @@ def whatsapp_message(vehicle, document_label, expiry_date):
 
 def whatsapp_expired_reminder(vehicle):
     """Generate a WhatsApp message with only expired/expiring document details."""
-    from datetime import date
     today = date.today()
     statuses = vehicle.document_statuses()
 

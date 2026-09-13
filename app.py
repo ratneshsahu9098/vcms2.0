@@ -1,6 +1,8 @@
 import io
 import json
 import os
+import shutil
+import urllib.parse
 from datetime import date, timedelta, datetime
 from functools import wraps
 
@@ -262,8 +264,12 @@ def register_routes(app):
 
             sr_no = request.form.get("sr_no", "").strip()
             if not sr_no:
-                count = Vehicle.query.count()
-                sr_no = f"SN{count + 1:03d}"
+                max_sr = db.session.query(db.func.max(Vehicle.sr_no)).scalar()
+                if max_sr:
+                    next_num = int(max_sr.replace("SN", "")) + 1
+                else:
+                    next_num = 1
+                sr_no = f"SN{next_num:03d}"
 
             vehicle = Vehicle(
                 sr_no=sr_no,
@@ -493,7 +499,6 @@ def register_routes(app):
                 flash("No expiry date set for this document.", "error")
                 return redirect(url_for("vehicle_list"))
             message = whatsapp_message(vehicle, document_label, expiry)
-        import urllib.parse
         wa_link = f"https://wa.me/{vehicle.mobile_number}?text={urllib.parse.quote(message)}"
         return redirect(wa_link)
 
@@ -505,7 +510,6 @@ def register_routes(app):
         if not message:
             flash("No expired or expiring documents found for this vehicle.", "error")
             return redirect(url_for("vehicle_list"))
-        import urllib.parse
         wa_link = f"https://wa.me/{vehicle.mobile_number}?text={urllib.parse.quote(message)}"
         return redirect(wa_link)
 
@@ -616,13 +620,26 @@ def register_routes(app):
                     vehicle = Vehicle(
                         vehicle_number=vnum,
                         chassis_number=chassis,
+                        engine_number=str(row.get("engine_number", "")).strip().upper(),
                         owner_name=str(row.get("owner_name", "")).strip(),
                         mobile_number=str(row.get("mobile_number", "")).strip(),
+                        vehicle_type=str(row.get("vehicle_type", "")).strip(),
+                        district=str(row.get("district", "")).strip(),
+                        registration_date=parse_date(row.get("registration_date")),
                         puc_expiry=parse_date(row.get("puc_expiry")),
                         fitness_expiry=parse_date(row.get("fitness_expiry")),
                         permit_expiry=parse_date(row.get("permit_expiry")),
+                        tax_from=parse_date(row.get("tax_from")),
                         tax_expiry=parse_date(row.get("tax_expiry")),
+                        tax_mode=str(row.get("tax_mode", "")).strip(),
+                        tax_amount=float(row.get("tax_amount", 0) or 0),
                         insurance_expiry=parse_date(row.get("insurance_expiry")),
+                        national_permit_expiry=parse_date(row.get("national_permit_expiry")),
+                        state_permit_expiry=parse_date(row.get("state_permit_expiry")),
+                        pollution_certificate_number=str(row.get("pollution_certificate_number", "")).strip(),
+                        insurance_company=str(row.get("insurance_company", "")).strip(),
+                        policy_number=str(row.get("policy_number", "")).strip(),
+                        remarks=str(row.get("remarks", "")).strip(),
                     )
                     db.session.add(vehicle)
                     imported += 1
@@ -805,7 +822,6 @@ def register_routes(app):
                 backup_path = os.path.join(app.config["BACKUP_FOLDER"], backup_name)
                 if os.path.exists(backup_path):
                     db.session.remove()
-                    import shutil
                     shutil.copy2(backup_path, db_path)
                     flash(f"Database restored from {backup_name}.", "success")
                 else:
