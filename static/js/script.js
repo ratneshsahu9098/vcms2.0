@@ -1,4 +1,5 @@
 document.addEventListener("DOMContentLoaded", function () {
+  // Sidebar toggle
   var toggle = document.getElementById("sidebarToggle");
   var sidebar = document.querySelector(".sidebar");
   if (toggle && sidebar) {
@@ -22,4 +23,28 @@ document.addEventListener("DOMContentLoaded", function () {
       setTimeout(function () { flash.remove(); }, 400);
     }, 5000);
   });
+
+  // Theme toggle
+  var themeToggle = document.getElementById("themeToggle");
+  var themeIcon = document.getElementById("themeIcon");
+  if (themeToggle && themeIcon) {
+    function updateIcon() {
+      var current = document.documentElement.getAttribute("data-theme");
+      if (current === "light") {
+        themeIcon.classList.remove("fa-sun");
+        themeIcon.classList.add("fa-moon");
+      } else {
+        themeIcon.classList.remove("fa-moon");
+        themeIcon.classList.add("fa-sun");
+      }
+    }
+    updateIcon();
+    themeToggle.addEventListener("click", function () {
+      var current = document.documentElement.getAttribute("data-theme");
+      var next = current === "light" ? "dark" : "light";
+      document.documentElement.setAttribute("data-theme", next);
+      localStorage.setItem("vcms_theme", next);
+      updateIcon();
+    });
+  }
 });

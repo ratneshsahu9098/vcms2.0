@@ -9,6 +9,12 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
+<script>
+  (function() {
+    var t = localStorage.getItem('vcms_theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
 
 {% if session.get('logged_in') or not config.LOGIN_REQUIRED %}
 <div class="app-shell">
@@ -68,6 +74,7 @@
     <header class="topbar">
       <button class="sidebar-toggle" id="sidebarToggle"><i class="fa-solid fa-bars"></i></button>
       <button class="btn-back" onclick="history.back()" title="Go Back"><i class="fa-solid fa-arrow-left"></i></button>
+      <button class="theme-toggle" id="themeToggle" title="Toggle light/dark mode"><i class="fa-solid fa-sun" id="themeIcon"></i></button>
       <h1 class="page-title">{% block page_title %}Dashboard{% endblock %}</h1>
     </header>
 
