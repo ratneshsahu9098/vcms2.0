@@ -1061,21 +1061,72 @@ def register_routes(app):
                 flash(f"AI parsing failed: {exc}", "error")
                 return render_template("ai_document_parser.html", parsed_data=None, ollama_running=True)
 
+            existing_vehicle = None
+            if parsed_data:
+                vnum = str(parsed_data.get("vehicle_number", "")).strip().upper()
+                chassis = str(parsed_data.get("chassis_number", "")).strip().upper()
+                if vnum or chassis:
+                    existing_vehicle = Vehicle.query.filter(
+                        db.or_(Vehicle.vehicle_number == vnum, Vehicle.chassis_number == chassis)
+                    ).first()
+
             return render_template(
                 "ai_document_parser.html",
                 parsed_data=parsed_data,
                 ocr_text=ocr_text,
                 ollama_running=True,
+                existing_vehicle=existing_vehicle,
             )
 
-        return render_template("ai_document_parser.html", parsed_data=None, ollama_running=True)
+        return render_template("ai_document_parser.html", parsed_data=None, ollama_running=True, existing_vehicle=None)
 
     @app.route("/ai/parse-document/add", methods=["POST"])
     @login_required
     def ai_parse_add_vehicle():
+        vnum = request.form.get("vehicle_number", "").strip().upper()
+        chassis = request.form.get("chassis_number", "").strip().upper()
+
+        existing = Vehicle.query.filter(
+            db.or_(Vehicle.vehicle_number == vnum, Vehicle.chassis_number == chassis)
+        ).first()
+
+        if existing:
+            updates = {
+                "engine_number": request.form.get("engine_number", "").strip().upper(),
+                "owner_name": request.form.get("owner_name", "").strip(),
+                "mobile_number": request.form.get("mobile_number", "").strip(),
+                "vehicle_type": request.form.get("vehicle_type", "").strip(),
+                "registration_date": parse_date(request.form.get("registration_date")),
+                "puc_expiry": parse_date(request.form.get("puc_expiry")),
+                "fitness_expiry": parse_date(request.form.get("fitness_expiry")),
+                "permit_expiry": parse_date(request.form.get("permit_expiry")),
+                "insurance_expiry": parse_date(request.form.get("insurance_expiry")),
+                "insurance_company": request.form.get("insurance_company", "").strip(),
+                "policy_number": request.form.get("policy_number", "").strip(),
+            }
+            updated_fields = []
+            for field, value in updates.items():
+                if value:
+                    old_val = getattr(existing, field)
+                    if field.endswith("_date") or field.endswith("_expiry"):
+                        if old_val is None:
+                            setattr(existing, field, value)
+                            updated_fields.append(field)
+                    elif isinstance(value, str) and not value:
+                        continue
+                    else:
+                        if old_val != value:
+                            setattr(existing, field, value)
+                            updated_fields.append(field)
+
+            existing.updated_at = datetime.utcnow()
+            db.session.commit()
+            flash(f"Vehicle {existing.vehicle_number} updated with {len(updated_fields)} new fields.", "success")
+            return redirect(url_for("view_vehicle", vehicle_id=existing.id))
+
         vehicle = Vehicle(
-            vehicle_number=request.form.get("vehicle_number", "").strip().upper(),
-            chassis_number=request.form.get("chassis_number", "").strip().upper(),
+            vehicle_number=vnum,
+            chassis_number=chassis,
             engine_number=request.form.get("engine_number", "").strip().upper(),
             owner_name=request.form.get("owner_name", "").strip(),
             mobile_number=request.form.get("mobile_number", "").strip(),

@@ -41,6 +41,19 @@
   <p style="color:var(--text-muted); margin:0;">Review the extracted data below, make corrections if needed, then add the vehicle.</p>
 </div>
 
+{% if existing_vehicle %}
+<div style="background:rgba(234,179,8,0.1); border:1px solid rgba(234,179,8,0.3); border-radius:10px; padding:16px; margin-bottom:18px;">
+  <h4 style="color:var(--yellow); margin:0 0 8px;"><i class="fa-solid fa-triangle-exclamation"></i> Vehicle Already Exists</h4>
+  <p style="color:var(--text); margin:0 0 8px;">This vehicle is already in the database. Existing data will be preserved for blank fields — only new values will be updated.</p>
+  <div style="display:flex; gap:16px; flex-wrap:wrap; font-size:0.85rem;">
+    <span style="color:var(--text-muted);">Vehicle: <strong style="color:#fff;">{{ existing_vehicle.vehicle_number }}</strong></span>
+    <span style="color:var(--text-muted);">Chassis: <strong style="color:#fff;">{{ existing_vehicle.chassis_number }}</strong></span>
+    <span style="color:var(--text-muted);">Owner: <strong style="color:#fff;">{{ existing_vehicle.owner_name }}</strong></span>
+  </div>
+  <a href="{{ url_for('view_vehicle', vehicle_id=existing_vehicle.id) }}" style="display:inline-block; margin-top:8px; font-size:0.85rem;">View existing record <i class="fa-solid fa-arrow-up-right-from-square"></i></a>
+</div>
+{% endif %}
+
 {% if ocr_text %}
 <details style="margin-bottom:18px;">
   <summary style="color:var(--text-muted); cursor:pointer; font-size:0.85rem;">View raw OCR text</summary>
@@ -106,7 +119,11 @@
       </div>
     </div>
     <div class="form-actions">
+      {% if existing_vehicle %}
+      <button type="submit" class="btn btn-primary"><i class="fa-solid fa-pen-to-square"></i> Update Vehicle</button>
+      {% else %}
       <button type="submit" class="btn btn-primary"><i class="fa-solid fa-plus"></i> Add Vehicle</button>
+      {% endif %}
       <a href="{{ url_for('ai_parse_document') }}" class="btn btn-outline-secondary"><i class="fa-solid fa-arrow-left"></i> Scan Another</a>
     </div>
   </div>
