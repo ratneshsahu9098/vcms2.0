@@ -961,7 +961,7 @@ def register_routes(app):
     def ai_chat(session_id=None):
         if not ai_service.check_api_key():
             flash("API key not configured. Set it in Settings.", "error")
-            return render_template("ai_chat.html", messages=[], ollama_running=False, session=None)
+            return render_template("ai_chat.html", messages=[], ollama_running=False, chat_session=None)
 
         if request.method == "POST":
             user_msg = request.form.get("message", "").strip()
@@ -1001,7 +1001,7 @@ def register_routes(app):
             chat_session = ChatSession.query.get_or_404(session_id)
             messages = [{"role": m.role, "content": m.content} for m in chat_session.messages.order_by(ChatMessage.id).all()]
 
-        return render_template("ai_chat.html", messages=messages, ollama_running=True, session=chat_session)
+        return render_template("ai_chat.html", messages=messages, ollama_running=True, chat_session=chat_session)
 
     @app.route("/ai/chat/new")
     @login_required

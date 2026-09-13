@@ -55,8 +55,8 @@
     </div>
 
     <form method="POST" class="ai-chat-input" id="chatForm">
-      {% if session %}
-      <input type="hidden" name="session_id" value="{{ session.id }}">
+      {% if chat_session %}
+      <input type="hidden" name="session_id" value="{{ chat_session.id }}">
       {% endif %}
       <input type="text" name="message" id="chatInput" class="form-control" placeholder="Ask about your fleet..." autocomplete="off" required>
       <button type="submit" class="btn btn-primary"><i class="fa-solid fa-paper-plane"></i></button>
