@@ -44,11 +44,22 @@
         </div>
       </div>
       <div class="form-group form-group-full">
-        <label>Model</label>
+        <label>Quick Select</label>
+        <select class="form-select" id="modelSelect" onchange="selectModel(this.value)">
+          <option value="">-- Choose a fast model --</option>
+          <option value="google/gemma-3-1b-it:free">Gemma 3 1B (Fastest)</option>
+          <option value="meta-llama/llama-3.2-3b-instruct:free">Llama 3.2 3B (Fast)</option>
+          <option value="qwen/qwen3-8b:free">Qwen3 8B (Balanced)</option>
+          <option value="microsoft/phi-4-reasoning:free">Phi-4 Reasoning</option>
+          <option value="__custom__">Custom (type below)</option>
+        </select>
+      </div>
+      <div class="form-group form-group-full">
+        <label>Model ID</label>
         <input type="text" name="openrouter_model" id="modelInput" class="form-control"
                value="{{ ai_settings.openrouter_model or '' }}"
-               placeholder="nvidia/llama-nemotron-embed-vl-1b-v2:free">
-        <small style="color:var(--text-muted);">Browse models at <a href="https://openrouter.ai/models" target="_blank">openrouter.ai/models</a></small>
+               placeholder="e.g. google/gemma-3-1b-it:free">
+        <small style="color:var(--text-muted);">Browse all models at <a href="https://openrouter.ai/models" target="_blank">openrouter.ai/models</a></small>
       </div>
     </div>
     <div class="form-actions" style="flex-wrap:wrap;">
@@ -85,6 +96,28 @@ function toggleKey() {
     icon.classList.replace('fa-eye-slash', 'fa-eye');
   }
 }
+
+function selectModel(value) {
+  const input = document.getElementById('modelInput');
+  if (value === '__custom__') {
+    input.value = '';
+    input.focus();
+  } else if (value) {
+    input.value = value;
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const current = document.getElementById('modelInput').value;
+  const select = document.getElementById('modelSelect');
+  const options = Array.from(select.options);
+  const match = options.find(o => o.value === current && o.value !== '');
+  if (match) {
+    select.value = current;
+  } else if (current) {
+    select.value = '__custom__';
+  }
+});
 
 function testApi(forceDebug) {
   const debug = forceDebug || document.getElementById('debugToggle').checked;
