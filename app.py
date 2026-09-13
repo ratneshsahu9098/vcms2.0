@@ -1041,6 +1041,10 @@ def register_routes(app):
             try:
                 import pytesseract
                 from PIL import Image
+                import os
+                tesseract_path = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+                if os.path.exists(tesseract_path):
+                    pytesseract.pytesseract.tesseract_cmd = tesseract_path
                 img = Image.open(file)
                 ocr_text = pytesseract.image_to_string(img)
             except Exception as exc:
