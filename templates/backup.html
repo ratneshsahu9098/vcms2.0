@@ -7,10 +7,19 @@
   <h3 class="panel-title"><i class="fa-solid fa-database"></i> Database Backup</h3>
   <p class="text-muted">Create a timestamped copy of the database, or restore a previous backup.</p>
 
-  <form method="POST" class="mb-4">
-    <input type="hidden" name="action" value="create">
-    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-circle-plus"></i> Create Backup Now</button>
-  </form>
+  <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px;">
+    <form method="POST" style="display:inline;">
+      <input type="hidden" name="action" value="create">
+      <button type="submit" class="btn btn-primary"><i class="fa-solid fa-circle-plus"></i> Create Backup Now</button>
+    </form>
+    <form method="POST" enctype="multipart/form-data" style="display:inline;" id="uploadForm">
+      <input type="hidden" name="action" value="upload_restore">
+      <label class="btn btn-outline-secondary" style="cursor:pointer;">
+        <i class="fa-solid fa-file-arrow-up"></i> Upload & Restore
+        <input type="file" name="backup_file" accept=".db" style="display:none;" onchange="confirmUpload(this)">
+      </label>
+    </form>
+  </div>
 
   <h4 class="report-group-title">Available Backups</h4>
   {% if backups %}
@@ -131,8 +140,23 @@
   {% else %}
   <div style="text-align:center; padding:30px 20px; background:var(--charcoal-light); border:1px dashed var(--border); border-radius:10px;">
     <i class="fa-brands fa-google-drive" style="font-size:2rem; color:var(--text-muted); margin-bottom:10px;"></i>
-    <p style="color:var(--text-muted); margin:0; font-size:0.9rem;">Connect Google Drive in Settings to enable cloud backup sync.</p>
+    <p style="color:var(--text-muted); margin:0 0 8px; font-size:0.9rem;">Connect Google Drive for automatic cloud backup.</p>
+    <p style="color:var(--text-muted); margin:0; font-size:0.8rem;">One-time setup: run <code>python setup_gdrive.py</code> after creating Google Cloud credentials.</p>
   </div>
   {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function confirmUpload(input) {
+  if (input.files.length > 0) {
+    if (confirm('Restore database from "' + input.files[0].name + '"? Current data will be replaced.')) {
+      document.getElementById('uploadForm').submit();
+    } else {
+      input.value = '';
+    }
+  }
+}
+</script>
 {% endblock %}

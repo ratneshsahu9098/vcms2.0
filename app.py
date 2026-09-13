@@ -835,6 +835,21 @@ def register_routes(app):
                     flash(f"Database restored from {backup_name}.", "success")
                 else:
                     flash("Backup file not found.", "error")
+            elif action == "upload_restore":
+                file = request.files.get("backup_file")
+                if file and file.filename:
+                    filename = file.filename.strip()
+                    if not filename.endswith(".db"):
+                        flash("Only .db files are allowed.", "error")
+                    else:
+                        upload_path = os.path.join(app.config["BACKUP_FOLDER"], f"upload_{filename}")
+                        file.save(upload_path)
+                        db.session.remove()
+                        shutil.copy2(upload_path, db_path)
+                        os.remove(upload_path)
+                        flash(f"Database restored from uploaded file: {filename}", "success")
+                else:
+                    flash("No file selected.", "error")
             return redirect(url_for("backup"))
 
         from utils import load_settings
