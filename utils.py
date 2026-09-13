@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import shutil
@@ -79,37 +80,127 @@ def normalize_import_dataframe(df):
     return df.rename(columns=rename)
 
 
-def create_backup(db_path, backup_folder):
-    os.makedirs(backup_folder, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y_%m_%d_%H%M%S")
-    backup_name = f"backup_{timestamp}.db"
-    backup_path = os.path.join(backup_folder, backup_name)
-    shutil.copy2(db_path, backup_path)
-    return backup_name, backup_path
+def _file_md5(filepath):
+    h = hashlib.md5()
+    with open(filepath, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
-def list_backups(backup_folder):
-    if not os.path.isdir(backup_folder):
+def _load_last_backup_meta(subfolder_path):
+    meta_file = os.path.join(subfolder_path, ".last_backup.json")
+    if os.path.exists(meta_file):
+        with open(meta_file, "r") as f:
+            return json.load(f)
+    return None
+
+
+def _save_last_backup_meta(subfolder_path, md5, backup_name):
+    meta_file = os.path.join(subfolder_path, ".last_backup.json")
+    with open(meta_file, "w") as f:
+        json.dump({"md5": md5, "backup_name": backup_name, "timestamp": datetime.now().isoformat()}, f)
+
+
+def _is_backup_duplicate(subfolder_path, current_md5):
+    last_meta = _load_last_backup_meta(subfolder_path)
+    if not last_meta:
+        return False, None
+
+    if last_meta.get("md5") == current_md5:
+        last_ts = last_meta.get("timestamp", "")
+        if last_ts:
+            try:
+                last_time = datetime.fromisoformat(last_ts)
+                elapsed = (datetime.now() - last_time).total_seconds()
+                if elapsed < 30:
+                    return True, last_meta.get("backup_name")
+            except (ValueError, TypeError):
+                pass
+        return True, last_meta.get("backup_name")
+
+    return False, None
+
+
+def create_backup(db_path, backup_folder, subfolder="local"):
+    lock_file = os.path.join(backup_folder, f".{subfolder}.backup.lock")
+
+    if os.path.exists(lock_file):
+        try:
+            with open(lock_file, "r") as f:
+                lock_ts = float(f.read().strip())
+            if (datetime.now().timestamp() - lock_ts) < 10:
+                meta = _load_last_backup_meta(os.path.join(backup_folder, subfolder))
+                if meta:
+                    today = datetime.now().strftime("%Y-%m-%d")
+                    existing_path = os.path.join(backup_folder, subfolder, today, meta["backup_name"])
+                    if os.path.exists(existing_path):
+                        return meta["backup_name"], existing_path
+        except (ValueError, IOError):
+            pass
+
+    with open(lock_file, "w") as f:
+        f.write(str(datetime.now().timestamp()))
+
+    try:
+        current_md5 = _file_md5(db_path)
+        subfolder_path = os.path.join(backup_folder, subfolder)
+        os.makedirs(subfolder_path, exist_ok=True)
+
+        is_dup, existing_name = _is_backup_duplicate(subfolder_path, current_md5)
+        if is_dup and existing_name:
+            today = datetime.now().strftime("%Y-%m-%d")
+            existing_path = os.path.join(subfolder_path, today, existing_name)
+            if os.path.exists(existing_path):
+                return existing_name, existing_path
+
+        today = datetime.now().strftime("%Y-%m-%d")
+        target_dir = os.path.join(backup_folder, subfolder, today)
+        os.makedirs(target_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%H%M%S")
+        backup_name = f"backup_{timestamp}.db"
+        backup_path = os.path.join(target_dir, backup_name)
+        shutil.copy2(db_path, backup_path)
+
+        _save_last_backup_meta(subfolder_path, current_md5, backup_name)
+
+        return backup_name, backup_path
+    finally:
+        if os.path.exists(lock_file):
+            os.remove(lock_file)
+
+
+def list_backups(backup_folder, subfolder="local"):
+    subfolder_path = os.path.join(backup_folder, subfolder)
+    if not os.path.isdir(subfolder_path):
         return []
-    files = [f for f in os.listdir(backup_folder) if f.endswith(".db")]
     backups = []
-    for f in files:
-        path = os.path.join(backup_folder, f)
-        stat = os.stat(path)
-        size = stat.st_size
-        if size >= 1024 * 1024:
-            size_str = f"{size / (1024 * 1024):.1f} MB"
-        elif size >= 1024:
-            size_str = f"{size / 1024:.1f} KB"
-        else:
-            size_str = f"{size} B"
-        created = datetime.fromtimestamp(stat.st_mtime)
-        backups.append({
-            "name": f,
-            "created": created.strftime("%d %b %Y, %I:%M %p"),
-            "size": size_str,
-        })
-    backups.sort(key=lambda x: x["name"], reverse=True)
+    for date_dir in sorted(os.listdir(subfolder_path), reverse=True):
+        date_path = os.path.join(subfolder_path, date_dir)
+        if not os.path.isdir(date_path):
+            continue
+        for f in os.listdir(date_path):
+            if not f.endswith(".db"):
+                continue
+            path = os.path.join(date_path, f)
+            stat = os.stat(path)
+            size = stat.st_size
+            if size >= 1024 * 1024:
+                size_str = f"{size / (1024 * 1024):.1f} MB"
+            elif size >= 1024:
+                size_str = f"{size / 1024:.1f} KB"
+            else:
+                size_str = f"{size} B"
+            created = datetime.fromtimestamp(stat.st_mtime)
+            backups.append({
+                "name": f,
+                "date": date_dir,
+                "path": path,
+                "rel_path": os.path.join(subfolder, date_dir, f),
+                "created": created.strftime("%d %b %Y, %I:%M %p"),
+                "size": size_str,
+            })
+    backups.sort(key=lambda x: x["rel_path"], reverse=True)
     return backups
 
 
@@ -274,7 +365,7 @@ SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
 
 DEFAULT_SETTINGS = {
     "openrouter_api_key": "",
-    "openrouter_model": "nvidia/llama-nemotron-embed-vl-1b-v2:free",
+    "openrouter_model": "dots-studio/dots-3-note-preview:free",
     "gdrive_auto_sync": True,
     "gdrive_last_sync": "",
     "gdrive_last_sync_status": "",
@@ -288,8 +379,18 @@ def load_settings():
             saved = json.load(f)
             settings = dict(DEFAULT_SETTINGS)
             settings.update(saved)
-            return settings
-    return dict(DEFAULT_SETTINGS)
+    else:
+        settings = dict(DEFAULT_SETTINGS)
+
+    env_key = os.environ.get("VCMS_OPENROUTER_KEY", "")
+    if env_key and not settings.get("openrouter_api_key"):
+        settings["openrouter_api_key"] = env_key
+
+    env_model = os.environ.get("VCMS_OPENROUTER_MODEL", "")
+    if env_model and not settings.get("openrouter_model"):
+        settings["openrouter_model"] = env_model
+
+    return settings
 
 
 def save_settings(settings):

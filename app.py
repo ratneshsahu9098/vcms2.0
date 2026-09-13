@@ -824,17 +824,18 @@ def register_routes(app):
         if request.method == "POST":
             action = request.form.get("action")
             if action == "create":
-                name, _ = create_backup(db_path, app.config["BACKUP_FOLDER"])
+                name, _ = create_backup(db_path, app.config["BACKUP_FOLDER"], subfolder="local")
                 flash(f"Backup created: {name}", "success")
             elif action == "restore":
-                backup_name = request.form.get("backup_name")
-                backup_path = os.path.join(app.config["BACKUP_FOLDER"], backup_name)
-                if os.path.exists(backup_path):
-                    db.session.remove()
-                    shutil.copy2(backup_path, db_path)
-                    flash(f"Database restored from {backup_name}.", "success")
-                else:
-                    flash("Backup file not found.", "error")
+                rel_path = request.form.get("backup_path")
+                if rel_path:
+                    backup_path = os.path.join(app.config["BACKUP_FOLDER"], rel_path)
+                    if os.path.exists(backup_path):
+                        db.session.remove()
+                        shutil.copy2(backup_path, db_path)
+                        flash(f"Database restored from {os.path.basename(rel_path)}.", "success")
+                    else:
+                        flash("Backup file not found.", "error")
             elif action == "upload_restore":
                 file = request.files.get("backup_file")
                 if file and file.filename:
@@ -853,7 +854,7 @@ def register_routes(app):
             return redirect(url_for("backup"))
 
         from utils import load_settings
-        backups = list_backups(app.config["BACKUP_FOLDER"])
+        backups = list_backups(app.config["BACKUP_FOLDER"], subfolder="local")
         gdrive_backups = google_drive.list_backups()
         gdrive_connected = google_drive.is_connected()
         app_settings = load_settings()
@@ -861,25 +862,26 @@ def register_routes(app):
                                gdrive_backups=gdrive_backups, gdrive_connected=gdrive_connected,
                                app_settings=app_settings)
 
-    @app.route("/backup/download/<name>")
+    @app.route("/backup/download/<path:rel_path>")
     @login_required
-    def download_backup(name):
-        path = os.path.join(app.config["BACKUP_FOLDER"], name)
+    def download_backup(rel_path):
+        path = os.path.join(app.config["BACKUP_FOLDER"], rel_path)
         if not os.path.exists(path):
             abort(404)
-        return send_file(path, as_attachment=True, download_name=name)
+        return send_file(path, as_attachment=True, download_name=os.path.basename(path))
 
     # ---- Google Drive Sync ------------------------------------------------
+
+    GDRIVE_REDIRECT_URI = os.environ.get("VCMS_GDRIVE_REDIRECT_URI", "http://localhost:5000/settings/google/callback")
 
     @app.route("/settings/google/connect")
     @login_required
     def gdrive_connect():
-        flow, error = google_drive.start_oauth_flow()
+        flow, error = google_drive.start_oauth_flow(GDRIVE_REDIRECT_URI)
         if error:
             flash(error, "error")
             return redirect(url_for("settings"))
-        redirect_uri = url_for("gdrive_callback", _external=True)
-        auth_url, _ = flow.authorization_url(prompt="consent", redirect_uri=redirect_uri)
+        auth_url, _ = flow.authorization_url(prompt="consent")
         return redirect(auth_url)
 
     @app.route("/settings/google/callback")
@@ -889,8 +891,7 @@ def register_routes(app):
         if not code:
             flash("Google Drive authorization failed.", "error")
             return redirect(url_for("settings"))
-        redirect_uri = url_for("gdrive_callback", _external=True)
-        result = google_drive.save_token_from_code(code, redirect_uri)
+        result = google_drive.save_token_from_code(code, GDRIVE_REDIRECT_URI)
         if result.get("ok"):
             email = google_drive.get_user_email()
             settings = load_settings()
@@ -919,7 +920,7 @@ def register_routes(app):
     def gdrive_sync():
         from utils import load_settings, save_settings
         db_path = app.config["SQLALCHEMY_DATABASE_URI"].replace("sqlite:///", "")
-        name, backup_path = create_backup(db_path, app.config["BACKUP_FOLDER"])
+        name, backup_path = create_backup(db_path, app.config["BACKUP_FOLDER"], subfolder="gdrive")
         result = google_drive.upload_backup(backup_path)
         settings = load_settings()
         if result.get("ok"):
@@ -981,7 +982,7 @@ def register_routes(app):
             return
         try:
             db_path = app.config["SQLALCHEMY_DATABASE_URI"].replace("sqlite:///", "")
-            name, backup_path = create_backup(db_path, app.config["BACKUP_FOLDER"])
+            name, backup_path = create_backup(db_path, app.config["BACKUP_FOLDER"], subfolder="gdrive")
             result = google_drive.upload_backup(backup_path)
             settings = load_settings()
             if result.get("ok"):
@@ -1142,7 +1143,7 @@ def register_routes(app):
     def ai_chat(session_id=None):
         if not ai_service.check_api_key():
             flash("API key not configured. Set it in Settings.", "error")
-            return render_template("ai_chat.html", messages=[], ollama_running=False, chat_session=None)
+            return render_template("ai_chat.html", messages=[], ai_enabled=False, chat_session=None)
 
         if request.method == "POST":
             user_msg = request.form.get("message", "").strip()
@@ -1182,7 +1183,7 @@ def register_routes(app):
             chat_session = ChatSession.query.get_or_404(session_id)
             messages = [{"role": m.role, "content": m.content} for m in chat_session.messages.order_by(ChatMessage.id).all()]
 
-        return render_template("ai_chat.html", messages=messages, ollama_running=True, chat_session=chat_session)
+        return render_template("ai_chat.html", messages=messages, ai_enabled=True, chat_session=chat_session)
 
     @app.route("/ai/chat/new")
     @login_required
@@ -1210,14 +1211,14 @@ def register_routes(app):
     @login_required
     def ai_parse_document():
         if not ai_service.check_api_key():
-            flash("Ollama is not running. Please start Ollama and try again.", "error")
-            return render_template("ai_document_parser.html", parsed_data=None, ollama_running=False)
+            flash("AI API key not configured. Set it in Settings.", "error")
+            return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=False)
 
         if request.method == "POST":
             file = request.files.get("document")
             if not file or file.filename == "":
                 flash("Please upload a document image.", "error")
-                return render_template("ai_document_parser.html", parsed_data=None, ollama_running=True)
+                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True)
 
             try:
                 import pytesseract
@@ -1230,17 +1231,17 @@ def register_routes(app):
                 ocr_text = pytesseract.image_to_string(img)
             except Exception as exc:
                 flash(f"OCR failed: {exc}", "error")
-                return render_template("ai_document_parser.html", parsed_data=None, ollama_running=True)
+                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True)
 
             if not ocr_text.strip():
                 flash("No text could be extracted from the image.", "error")
-                return render_template("ai_document_parser.html", parsed_data=None, ollama_running=True)
+                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True)
 
             try:
                 parsed_data = ai_service.parse_document_text(ocr_text)
             except Exception as exc:
                 flash(f"AI parsing failed: {exc}", "error")
-                return render_template("ai_document_parser.html", parsed_data=None, ollama_running=True)
+                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True)
 
             existing_vehicle = None
             if parsed_data:
@@ -1255,11 +1256,11 @@ def register_routes(app):
                 "ai_document_parser.html",
                 parsed_data=parsed_data,
                 ocr_text=ocr_text,
-                ollama_running=True,
+                ai_enabled=True,
                 existing_vehicle=existing_vehicle,
             )
 
-        return render_template("ai_document_parser.html", parsed_data=None, ollama_running=True, existing_vehicle=None)
+        return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True, existing_vehicle=None)
 
     @app.route("/ai/parse-document/add", methods=["POST"])
     @login_required
@@ -1332,17 +1333,17 @@ def register_routes(app):
     @login_required
     def ai_insights():
         if not ai_service.check_api_key():
-            flash("Ollama is not running. Please start Ollama and try again.", "error")
-            return render_template("ai_insights.html", insights=None, ollama_running=False)
+            flash("AI API key not configured. Set it in Settings.", "error")
+            return render_template("ai_insights.html", insights=None, ai_enabled=False)
 
         vehicles = Vehicle.query.all()
         try:
             insights = ai_service.generate_insights(vehicles)
         except Exception as exc:
             flash(f"Failed to generate insights: {exc}", "error")
-            return render_template("ai_insights.html", insights=None, ollama_running=True)
+            return render_template("ai_insights.html", insights=None, ai_enabled=True)
 
-        return render_template("ai_insights.html", insights=insights, ollama_running=True)
+        return render_template("ai_insights.html", insights=insights, ai_enabled=True)
 
 
 def update_vehicle_from_record(vehicle, record):

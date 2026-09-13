@@ -15,11 +15,12 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // Auto-dismiss flash messages after a few seconds
+  // Auto-dismiss flash messages with slide-out
   document.querySelectorAll(".flash").forEach(function (flash) {
     setTimeout(function () {
-      flash.style.transition = "opacity 0.4s ease";
+      flash.style.transition = "opacity 0.4s ease, transform 0.4s ease";
       flash.style.opacity = "0";
+      flash.style.transform = "translateY(-8px)";
       setTimeout(function () { flash.remove(); }, 400);
     }, 5000);
   });
@@ -45,6 +46,114 @@ document.addEventListener("DOMContentLoaded", function () {
       document.documentElement.setAttribute("data-theme", next);
       localStorage.setItem("vcms_theme", next);
       updateIcon();
+    });
+  }
+
+  // Number counter animation for stat values
+  function animateCounters() {
+    document.querySelectorAll(".stat-value").forEach(function (el) {
+      var text = el.textContent.trim();
+      var target = parseInt(text, 10);
+      if (isNaN(target) || target === 0) return;
+
+      var duration = 600;
+      var start = performance.now();
+      el.textContent = "0";
+
+      function step(now) {
+        var elapsed = now - start;
+        var progress = Math.min(elapsed / duration, 1);
+        var eased = 1 - Math.pow(1 - progress, 3);
+        el.textContent = Math.round(eased * target);
+        if (progress < 1) {
+          requestAnimationFrame(step);
+        } else {
+          el.textContent = text;
+        }
+      }
+      requestAnimationFrame(step);
+    });
+  }
+  animateCounters();
+
+  // Button loading state on form submit
+  document.querySelectorAll("form").forEach(function (form) {
+    form.addEventListener("submit", function () {
+      var btn = form.querySelector('button[type="submit"]');
+      if (btn && !btn.classList.contains("btn-loading")) {
+        btn.classList.add("btn-loading");
+        var originalHTML = btn.innerHTML;
+        btn.setAttribute("data-original", originalHTML);
+        setTimeout(function () {
+          btn.classList.remove("btn-loading");
+          if (btn.hasAttribute("data-original")) {
+            btn.innerHTML = btn.getAttribute("data-original");
+            btn.removeAttribute("data-original");
+          }
+        }, 8000);
+      }
+    });
+  });
+
+  // Select all checkbox animation
+  var selectAll = document.getElementById("selectAll");
+  var selectAllHead = document.getElementById("selectAllHead");
+  if (selectAll && selectAllHead) {
+    function syncCheckboxes(source) {
+      var checked = source.checked;
+      selectAll.checked = checked;
+      selectAllHead.checked = checked;
+      document.querySelectorAll(".row-check").forEach(function (cb) {
+        cb.checked = checked;
+      });
+      updateBulkButtons();
+    }
+    selectAll.addEventListener("change", function () { syncCheckboxes(selectAll); });
+    selectAllHead.addEventListener("change", function () { syncCheckboxes(selectAllHead); });
+  }
+
+  function updateBulkButtons() {
+    var checked = document.querySelectorAll(".row-check:checked");
+    var count = checked.length;
+    var printBtn = document.getElementById("btnPrintSelected");
+    var qrBtn = document.getElementById("btnPrintQR");
+    var countSpan = document.getElementById("selectedCount");
+    var qrCountSpan = document.getElementById("selectedQRCount");
+    if (printBtn) printBtn.disabled = count === 0;
+    if (qrBtn) qrBtn.disabled = count === 0;
+    if (countSpan) countSpan.textContent = count;
+    if (qrCountSpan) qrCountSpan.textContent = count;
+  }
+
+  document.querySelectorAll(".row-check").forEach(function (cb) {
+    cb.addEventListener("change", updateBulkButtons);
+  });
+
+  // Print selected vehicles
+  var btnPrint = document.getElementById("btnPrintSelected");
+  if (btnPrint) {
+    btnPrint.addEventListener("click", function () {
+      var ids = [];
+      document.querySelectorAll(".row-check:checked").forEach(function (cb) {
+        ids.push(cb.value);
+      });
+      if (ids.length > 0) {
+        window.open("/vehicles/print?ids=" + ids.join(","), "_blank");
+      }
+    });
+  }
+
+  // Print QR codes
+  var btnQR = document.getElementById("btnPrintQR");
+  if (btnQR) {
+    btnQR.addEventListener("click", function () {
+      var ids = [];
+      document.querySelectorAll(".row-check:checked").forEach(function (cb) {
+        ids.push(cb.value);
+      });
+      if (ids.length > 0) {
+        window.open("/vehicles/print-qr?ids=" + ids.join(","), "_blank");
+      }
     });
   }
 });

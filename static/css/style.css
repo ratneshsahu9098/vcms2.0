@@ -494,3 +494,265 @@ code { background: var(--code-bg); color: var(--green); }
   transition: all 0.15s;
 }
 .theme-toggle:hover { color: var(--text); border-color: var(--text-muted); }
+
+/* ============================================================
+   UI/UX ANIMATIONS
+   ============================================================ */
+
+/* ---------- Keyframes ---------- */
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(-14px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); max-height: 0; }
+  to { opacity: 1; transform: translateY(0); max-height: 200px; }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------- Page entrance ---------- */
+.content {
+  animation: fadeSlideUp 0.3s ease-out;
+}
+
+/* ---------- Auth card entrance ---------- */
+.auth-card {
+  animation: scaleIn 0.35s ease-out;
+}
+
+/* ---------- Stat cards ---------- */
+.stat-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.stat-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 20px var(--shadow);
+  border-color: var(--blue);
+}
+
+.stat-value {
+  animation: countUp 0.4s ease-out both;
+}
+
+/* Staggered stat card entrance */
+.stat-card:nth-child(1) { animation: fadeSlideUp 0.3s ease-out 0.0s both; }
+.stat-card:nth-child(2) { animation: fadeSlideUp 0.3s ease-out 0.05s both; }
+.stat-card:nth-child(3) { animation: fadeSlideUp 0.3s ease-out 0.10s both; }
+.stat-card:nth-child(4) { animation: fadeSlideUp 0.3s ease-out 0.15s both; }
+.stat-card:nth-child(5) { animation: fadeSlideUp 0.3s ease-out 0.20s both; }
+.stat-card:nth-child(6) { animation: fadeSlideUp 0.3s ease-out 0.25s both; }
+
+/* ---------- Document overview cards ---------- */
+.doc-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.doc-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px var(--shadow);
+  border-color: var(--blue);
+}
+
+.doc-card:nth-child(1) { animation: fadeSlideUp 0.3s ease-out 0.1s both; }
+.doc-card:nth-child(2) { animation: fadeSlideUp 0.3s ease-out 0.15s both; }
+.doc-card:nth-child(3) { animation: fadeSlideUp 0.3s ease-out 0.20s both; }
+.doc-card:nth-child(4) { animation: fadeSlideUp 0.3s ease-out 0.25s both; }
+.doc-card:nth-child(5) { animation: fadeSlideUp 0.3s ease-out 0.30s both; }
+
+/* ---------- Activity panels ---------- */
+.panel {
+  animation: fadeSlideUp 0.3s ease-out 0.15s both;
+}
+
+/* ---------- Flash messages ---------- */
+.flash {
+  animation: slideDown 0.3s ease-out;
+}
+
+/* ---------- Sidebar nav links ---------- */
+.sidebar-nav a {
+  transition: background 0.15s ease, color 0.15s ease, padding-left 0.15s ease;
+}
+.sidebar-nav a:hover {
+  padding-left: 18px;
+}
+.sidebar-nav a.active {
+  animation: slideInRight 0.2s ease-out;
+}
+
+/* ---------- Buttons ---------- */
+.btn {
+  transition: transform 0.1s ease, box-shadow 0.15s ease, filter 0.15s ease, background 0.15s ease;
+}
+.btn:active {
+  transform: scale(0.97);
+}
+.btn-primary:hover {
+  box-shadow: 0 2px 10px rgba(59, 130, 246, 0.3);
+}
+
+/* ---------- Table rows ---------- */
+.table-main tbody tr {
+  transition: background 0.15s ease;
+}
+
+/* ---------- Actions icons ---------- */
+.actions-cell a, .actions-cell button {
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+.actions-cell a:hover {
+  transform: scale(1.2);
+}
+.actions-cell button:hover {
+  transform: scale(1.2);
+}
+
+/* ---------- Badge pulse for urgent statuses ---------- */
+.status-red {
+  animation: pulse 2s ease-in-out infinite;
+}
+.status-orange {
+  animation: pulse 2.5s ease-in-out infinite;
+}
+
+/* ---------- Dot pulse ---------- */
+.dot-red {
+  animation: pulse 2s ease-in-out infinite;
+}
+.dot-orange {
+  animation: pulse 2.5s ease-in-out infinite;
+}
+
+/* ---------- Filter bar ---------- */
+.filter-bar {
+  animation: fadeSlideUp 0.25s ease-out 0.05s both;
+}
+
+/* ---------- Form inputs focus ---------- */
+.form-control, .form-select {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* ---------- Report tabs ---------- */
+.report-tab {
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+.report-tab:hover {
+  transform: translateY(-1px);
+}
+.report-tab:active {
+  transform: scale(0.97);
+}
+
+/* ---------- Detail card ---------- */
+.detail-card {
+  animation: scaleIn 0.3s ease-out;
+}
+
+/* ---------- Doc status items staggered ---------- */
+.doc-status-item:nth-child(1) { animation: fadeSlideUp 0.25s ease-out 0.05s both; }
+.doc-status-item:nth-child(2) { animation: fadeSlideUp 0.25s ease-out 0.10s both; }
+.doc-status-item:nth-child(3) { animation: fadeSlideUp 0.25s ease-out 0.15s both; }
+.doc-status-item:nth-child(4) { animation: fadeSlideUp 0.25s ease-out 0.20s both; }
+.doc-status-item:nth-child(5) { animation: fadeSlideUp 0.25s ease-out 0.25s both; }
+
+/* ---------- Theme toggle rotation ---------- */
+.theme-toggle {
+  transition: all 0.2s ease;
+}
+.theme-toggle:hover {
+  transform: rotate(30deg);
+}
+
+/* ---------- Upload area ---------- */
+.upload-area {
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.15s ease;
+}
+.upload-area:hover {
+  transform: scale(1.01);
+}
+
+/* ---------- Back button ---------- */
+.btn-back {
+  transition: all 0.15s ease;
+}
+.btn-back:hover {
+  transform: translateX(-2px);
+}
+
+/* ---------- Checkbox check animation ---------- */
+.col-check input[type="checkbox"] {
+  transition: transform 0.1s ease;
+}
+.col-check input[type="checkbox"]:active {
+  transform: scale(1.2);
+}
+
+/* ---------- Loading spinner ---------- */
+.btn-loading {
+  position: relative;
+  pointer-events: none;
+  opacity: 0.7;
+}
+.btn-loading::after {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  top: 50%;
+  left: 50%;
+  margin: -8px 0 0 -8px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---------- Skeleton shimmer (for future loading states) ---------- */
+.skeleton {
+  background: linear-gradient(90deg, var(--charcoal-light) 25%, var(--charcoal) 50%, var(--charcoal-light) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 6px;
+}
+
+/* ---------- Reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

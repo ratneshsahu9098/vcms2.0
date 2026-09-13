@@ -3,7 +3,7 @@
 {% block page_title %}AI Document Scanner{% endblock %}
 
 {% block content %}
-{% if not ollama_running %}
+{% if not ai_enabled %}
 <div class="panel" style="text-align:center; padding:60px 20px;">
   <i class="fa-solid fa-file-circle-xmark" style="font-size:3rem; color:var(--text-muted); margin-bottom:16px;"></i>
   <h3 style="color:var(--text);">API Key Not Configured</h3>

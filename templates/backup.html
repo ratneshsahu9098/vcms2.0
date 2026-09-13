@@ -28,6 +28,7 @@
       <thead>
         <tr>
           <th>Backup File</th>
+          <th>Date</th>
           <th>Created</th>
           <th>Size</th>
           <th>Actions</th>
@@ -37,14 +38,15 @@
         {% for b in backups %}
         <tr>
           <td style="font-weight:600; color:var(--text);">{{ b.name }}</td>
+          <td>{{ b.date }}</td>
           <td>{{ b.created }}</td>
           <td>{{ b.size }}</td>
           <td class="actions-cell">
-            <a href="{{ url_for('download_backup', name=b.name) }}" title="Download"><i class="fa-solid fa-download"></i></a>
+            <a href="{{ url_for('download_backup', rel_path=b.rel_path) }}" title="Download"><i class="fa-solid fa-download"></i></a>
             <form method="POST" class="inline-form"
                   onsubmit="return confirm('Restore database from {{ b.name }}? Current data will be replaced.');">
               <input type="hidden" name="action" value="restore">
-              <input type="hidden" name="backup_name" value="{{ b.name }}">
+              <input type="hidden" name="backup_path" value="{{ b.rel_path }}">
               <button type="submit" title="Restore"><i class="fa-solid fa-rotate-left"></i></button>
             </form>
           </td>
