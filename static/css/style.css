@@ -68,6 +68,7 @@ a:hover { text-decoration: underline; }
 .sidebar-nav a i { width: 18px; text-align: center; }
 .sidebar-nav a:hover { background: var(--charcoal-light); color: var(--text); text-decoration: none; }
 .sidebar-nav a.active { background: rgba(59,130,246,0.15); color: var(--blue); }
+.sidebar-divider { height:1px; background:var(--border); margin:10px 14px; }
 
 .sidebar-footer { padding: 14px; border-top: 1px solid var(--border); }
 .sidebar-footer a { color: var(--text-muted); display: flex; align-items: center; gap: 10px; padding: 8px 10px; }

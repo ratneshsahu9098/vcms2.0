@@ -1,0 +1,91 @@
+{% extends "layout.html" %}
+{% block title %}AI Assistant{% endblock %}
+{% block page_title %}AI Assistant{% endblock %}
+
+{% block content %}
+{% if not ollama_running %}
+<div class="panel" style="text-align:center; padding:60px 20px;">
+  <i class="fa-solid fa-robot" style="font-size:3rem; color:var(--text-muted); margin-bottom:16px;"></i>
+  <h3 style="color:#fff;">Ollama is not running</h3>
+  <p style="color:var(--text-muted); margin:10px 0 20px;">Start Ollama to use the AI assistant.</p>
+  <code style="background:var(--bg); padding:8px 16px; border-radius:8px; color:var(--green);">ollama serve</code>
+  <p style="color:var(--text-muted); margin-top:12px; font-size:0.85rem;">Make sure <strong>qwen3:8b</strong> model is pulled: <code>ollama pull qwen3:8b</code></p>
+</div>
+{% else %}
+<div class="ai-chat-container">
+  <div class="ai-chat-messages" id="chatMessages">
+    {% if not messages %}
+    <div class="ai-welcome">
+      <i class="fa-solid fa-robot" style="font-size:2.5rem; color:var(--blue); margin-bottom:16px;"></i>
+      <h3 style="color:#fff; margin:0 0 8px;">VCMS AI Assistant</h3>
+      <p style="color:var(--text-muted); margin:0 0 20px;">Ask anything about your fleet compliance data.</p>
+      <div class="ai-suggestions">
+        <button class="ai-suggestion-btn" onclick="askSuggestion(this)">Which vehicles have expired documents?</button>
+        <button class="ai-suggestion-btn" onclick="askSuggestion(this)">Show me tax expiring this month</button>
+        <button class="ai-suggestion-btn" onclick="askSuggestion(this)">How many vehicles need insurance renewal?</button>
+        <button class="ai-suggestion-btn" onclick="askSuggestion(this)">Give me a compliance summary</button>
+      </div>
+    </div>
+    {% endif %}
+
+    {% for msg in messages %}
+    <div class="ai-msg ai-msg-{{ msg.role }}">
+      <div class="ai-msg-avatar">
+        {% if msg.role == 'user' %}
+        <i class="fa-solid fa-user"></i>
+        {% else %}
+        <i class="fa-solid fa-robot"></i>
+        {% endif %}
+      </div>
+      <div class="ai-msg-content">{{ msg.content | replace('\n', '<br>') | safe }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <form method="POST" class="ai-chat-input" id="chatForm">
+    <input type="text" name="message" id="chatInput" class="form-control" placeholder="Ask about your fleet..." autocomplete="off" required>
+    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-paper-plane"></i></button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<style>
+  .ai-chat-container { display:flex; flex-direction:column; height:calc(100vh - 160px); }
+  .ai-chat-messages { flex:1; overflow-y:auto; padding:10px 0; display:flex; flex-direction:column; gap:16px; }
+  .ai-welcome { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; text-align:center; }
+  .ai-suggestions { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
+  .ai-suggestion-btn {
+    background:var(--charcoal-light); border:1px solid var(--border); color:var(--text-muted);
+    padding:8px 16px; border-radius:20px; font-size:0.85rem; cursor:pointer; transition:all 0.15s;
+  }
+  .ai-suggestion-btn:hover { border-color:var(--blue); color:var(--blue); }
+  .ai-msg { display:flex; gap:12px; max-width:85%; }
+  .ai-msg-user { align-self:flex-end; flex-direction:row-reverse; }
+  .ai-msg-assistant { align-self:flex-start; }
+  .ai-msg-avatar {
+    width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    flex-shrink:0; font-size:0.9rem;
+  }
+  .ai-msg-user .ai-msg-avatar { background:rgba(59,130,246,0.2); color:var(--blue); }
+  .ai-msg-assistant .ai-msg-avatar { background:rgba(34,197,94,0.2); color:var(--green); }
+  .ai-msg-content {
+    background:var(--charcoal); border:1px solid var(--border); border-radius:12px;
+    padding:12px 16px; font-size:0.9rem; line-height:1.6; word-wrap:break-word;
+  }
+  .ai-msg-user .ai-msg-content { background:rgba(59,130,246,0.1); border-color:rgba(59,130,246,0.3); }
+  .ai-chat-input {
+    display:flex; gap:10px; padding-top:14px; border-top:1px solid var(--border); margin-top:10px;
+  }
+  .ai-chat-input .form-control { flex:1; }
+</style>
+<script>
+  const chatMessages = document.getElementById('chatMessages');
+  if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+  function askSuggestion(btn) {
+    document.getElementById('chatInput').value = btn.textContent;
+    document.getElementById('chatForm').submit();
+  }
+</script>
+{% endblock %}

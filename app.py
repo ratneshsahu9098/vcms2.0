@@ -19,6 +19,7 @@ from utils import (
     parse_date, allowed_file, normalize_import_dataframe,
     create_backup, list_backups, whatsapp_message, whatsapp_expired_reminder, generate_vehicle_qr
 )
+import ai_service
 
 
 def create_app():
@@ -906,6 +907,127 @@ def register_routes(app):
     def api_vehicle(vehicle_id):
         vehicle = Vehicle.query.get_or_404(vehicle_id)
         return jsonify(vehicle.to_dict())
+
+    # ---- AI Chat Assistant --------------------------------------------------
+
+    @app.route("/ai/chat", methods=["GET", "POST"])
+    @login_required
+    def ai_chat():
+        if not ai_service.check_ollama_running():
+            flash("Ollama is not running. Please start Ollama and try again.", "error")
+            return render_template("ai_chat.html", messages=[], ollama_running=False)
+
+        if request.method == "POST":
+            user_msg = request.form.get("message", "").strip()
+            if not user_msg:
+                return render_template("ai_chat.html", messages=[], ollama_running=True)
+
+            messages = session.get("ai_chat_messages", [])
+            messages.append({"role": "user", "content": user_msg})
+
+            vehicles = Vehicle.query.all()
+            try:
+                ai_reply = ai_service.ask_assistant(user_msg, vehicles)
+            except Exception as exc:
+                ai_reply = f"Error communicating with AI: {exc}"
+
+            messages.append({"role": "assistant", "content": ai_reply})
+            session["ai_chat_messages"] = messages
+            return render_template("ai_chat.html", messages=messages, ollama_running=True)
+
+        session.pop("ai_chat_messages", None)
+        return render_template("ai_chat.html", messages=[], ollama_running=True)
+
+    @app.route("/ai/chat/clear", methods=["POST"])
+    @login_required
+    def ai_chat_clear():
+        session.pop("ai_chat_messages", None)
+        return redirect(url_for("ai_chat"))
+
+    # ---- AI Document Parser -------------------------------------------------
+
+    @app.route("/ai/parse-document", methods=["GET", "POST"])
+    @login_required
+    def ai_parse_document():
+        if not ai_service.check_ollama_running():
+            flash("Ollama is not running. Please start Ollama and try again.", "error")
+            return render_template("ai_document_parser.html", parsed_data=None, ollama_running=False)
+
+        if request.method == "POST":
+            file = request.files.get("document")
+            if not file or file.filename == "":
+                flash("Please upload a document image.", "error")
+                return render_template("ai_document_parser.html", parsed_data=None, ollama_running=True)
+
+            try:
+                import pytesseract
+                from PIL import Image
+                img = Image.open(file)
+                ocr_text = pytesseract.image_to_string(img)
+            except Exception as exc:
+                flash(f"OCR failed: {exc}", "error")
+                return render_template("ai_document_parser.html", parsed_data=None, ollama_running=True)
+
+            if not ocr_text.strip():
+                flash("No text could be extracted from the image.", "error")
+                return render_template("ai_document_parser.html", parsed_data=None, ollama_running=True)
+
+            try:
+                parsed_data = ai_service.parse_document_text(ocr_text)
+            except Exception as exc:
+                flash(f"AI parsing failed: {exc}", "error")
+                return render_template("ai_document_parser.html", parsed_data=None, ollama_running=True)
+
+            return render_template(
+                "ai_document_parser.html",
+                parsed_data=parsed_data,
+                ocr_text=ocr_text,
+                ollama_running=True,
+            )
+
+        return render_template("ai_document_parser.html", parsed_data=None, ollama_running=True)
+
+    @app.route("/ai/parse-document/add", methods=["POST"])
+    @login_required
+    def ai_parse_add_vehicle():
+        vehicle = Vehicle(
+            vehicle_number=request.form.get("vehicle_number", "").strip().upper(),
+            chassis_number=request.form.get("chassis_number", "").strip().upper(),
+            engine_number=request.form.get("engine_number", "").strip().upper(),
+            owner_name=request.form.get("owner_name", "").strip(),
+            mobile_number=request.form.get("mobile_number", "").strip(),
+            vehicle_type=request.form.get("vehicle_type", "").strip(),
+            registration_date=parse_date(request.form.get("registration_date")),
+            puc_expiry=parse_date(request.form.get("puc_expiry")),
+            fitness_expiry=parse_date(request.form.get("fitness_expiry")),
+            permit_expiry=parse_date(request.form.get("permit_expiry")),
+            insurance_expiry=parse_date(request.form.get("insurance_expiry")),
+            insurance_company=request.form.get("insurance_company", "").strip(),
+            policy_number=request.form.get("policy_number", "").strip(),
+        )
+        db.session.add(vehicle)
+        db.session.commit()
+        resequence_sr_nos()
+        flash(f"Vehicle {vehicle.vehicle_number} added from parsed document.", "success")
+        return redirect(url_for("vehicle_list"))
+
+    # ---- AI Insights --------------------------------------------------------
+
+    @app.route("/ai/insights")
+    @login_required
+    def ai_insights():
+        if not ai_service.check_ollama_running():
+            flash("Ollama is not running. Please start Ollama and try again.", "error")
+            return render_template("ai_insights.html", insights=None, ollama_running=False)
+
+        vehicles = Vehicle.query.all()
+        try:
+            insights = ai_service.generate_insights(vehicles)
+        except Exception as exc:
+            flash(f"Failed to generate insights: {exc}", "error")
+            return render_template("ai_insights.html", insights=None, ollama_running=True)
+
+        return render_template("ai_insights.html", insights=insights, ollama_running=True)
 
 
 def update_vehicle_from_record(vehicle, record):

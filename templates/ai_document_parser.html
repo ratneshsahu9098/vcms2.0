@@ -1,0 +1,154 @@
+{% extends "layout.html" %}
+{% block title %}Document Scanner{% endblock %}
+{% block page_title %}AI Document Scanner{% endblock %}
+
+{% block content %}
+{% if not ollama_running %}
+<div class="panel" style="text-align:center; padding:60px 20px;">
+  <i class="fa-solid fa-file-circle-xmark" style="font-size:3rem; color:var(--text-muted); margin-bottom:16px;"></i>
+  <h3 style="color:#fff;">Ollama is not running</h3>
+  <p style="color:var(--text-muted); margin:10px 0 20px;">Start Ollama to use the document scanner.</p>
+  <code style="background:var(--bg); padding:8px 16px; border-radius:8px; color:var(--green);">ollama serve</code>
+</div>
+{% else %}
+
+{% if not parsed_data %}
+<div class="panel">
+  <h3 style="color:#fff; margin:0 0 16px;"><i class="fa-solid fa-cloud-arrow-up" style="color:var(--blue);"></i> Upload Document Image</h3>
+  <p style="color:var(--text-muted); margin-bottom:16px;">Upload an image of RC, Insurance, PUC, or Fitness certificate. AI will extract vehicle data automatically.</p>
+  <form method="POST" enctype="multipart/form-data" class="upload-zone" id="uploadForm">
+    <div class="upload-area" id="dropZone" onclick="document.getElementById('fileInput').click()">
+      <i class="fa-solid fa-image" style="font-size:2.5rem; color:var(--text-muted); margin-bottom:12px;"></i>
+      <p style="color:var(--text-muted); margin:0;">Click or drag an image here</p>
+      <p style="color:var(--text-muted); font-size:0.8rem; margin:6px 0 0;">Supports: JPG, PNG, BMP, TIFF</p>
+      <input type="file" name="document" id="fileInput" accept="image/*" style="display:none;" required>
+    </div>
+    <div id="preview" style="display:none; margin-top:16px;">
+      <img id="previewImg" style="max-width:100%; max-height:300px; border-radius:8px; border:1px solid var(--border);">
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary" id="submitBtn" disabled>
+        <i class="fa-solid fa-wand-magic-sparkles"></i> Scan & Extract Data
+      </button>
+    </div>
+  </form>
+</div>
+{% else %}
+
+<div class="panel" style="margin-bottom:18px;">
+  <h3 style="color:#fff; margin:0 0 6px;"><i class="fa-solid fa-circle-check" style="color:var(--green);"></i> Document Scanned Successfully</h3>
+  <p style="color:var(--text-muted); margin:0;">Review the extracted data below, make corrections if needed, then add the vehicle.</p>
+</div>
+
+{% if ocr_text %}
+<details style="margin-bottom:18px;">
+  <summary style="color:var(--text-muted); cursor:pointer; font-size:0.85rem;">View raw OCR text</summary>
+  <pre style="background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px; margin-top:8px; color:var(--text-muted); font-size:0.82rem; max-height:200px; overflow-y:auto;">{{ ocr_text }}</pre>
+</details>
+{% endif %}
+
+<form method="POST" action="{{ url_for('ai_parse_add_vehicle') }}">
+  <div class="detail-card">
+    <h4 style="color:#fff; margin:0 0 16px;">Extracted Vehicle Information</h4>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Vehicle Number *</label>
+        <input type="text" name="vehicle_number" class="form-control" value="{{ parsed_data.vehicle_number or '' }}" required>
+      </div>
+      <div class="form-group">
+        <label>Chassis Number *</label>
+        <input type="text" name="chassis_number" class="form-control" value="{{ parsed_data.chassis_number or '' }}" required>
+      </div>
+      <div class="form-group">
+        <label>Engine Number</label>
+        <input type="text" name="engine_number" class="form-control" value="{{ parsed_data.engine_number or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Owner Name</label>
+        <input type="text" name="owner_name" class="form-control" value="{{ parsed_data.owner_name or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Mobile Number</label>
+        <input type="text" name="mobile_number" class="form-control" value="">
+      </div>
+      <div class="form-group">
+        <label>Vehicle Type</label>
+        <input type="text" name="vehicle_type" class="form-control" value="{{ parsed_data.vehicle_type or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Registration Date</label>
+        <input type="date" name="registration_date" class="form-control" value="{{ parsed_data.registration_date or '' }}">
+      </div>
+      <div class="form-group">
+        <label>PUC Expiry</label>
+        <input type="date" name="puc_expiry" class="form-control" value="{{ parsed_data.puc_expiry or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Fitness Expiry</label>
+        <input type="date" name="fitness_expiry" class="form-control" value="{{ parsed_data.fitness_expiry or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Permit Expiry</label>
+        <input type="date" name="permit_expiry" class="form-control" value="{{ parsed_data.permit_expiry or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Insurance Expiry</label>
+        <input type="date" name="insurance_expiry" class="form-control" value="{{ parsed_data.insurance_expiry or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Insurance Company</label>
+        <input type="text" name="insurance_company" class="form-control" value="{{ parsed_data.insurance_company or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Policy Number</label>
+        <input type="text" name="policy_number" class="form-control" value="{{ parsed_data.policy_number or '' }}">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary"><i class="fa-solid fa-plus"></i> Add Vehicle</button>
+      <a href="{{ url_for('ai_parse_document') }}" class="btn btn-outline-secondary"><i class="fa-solid fa-arrow-left"></i> Scan Another</a>
+    </div>
+  </div>
+</form>
+
+{% endif %}
+{% endif %}
+
+<style>
+  .upload-area {
+    border:2px dashed var(--border); border-radius:12px; padding:40px 20px; text-align:center;
+    cursor:pointer; transition:border-color 0.2s;
+  }
+  .upload-area:hover, .upload-area.dragover { border-color:var(--blue); }
+</style>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const preview = document.getElementById('preview');
+  const previewImg = document.getElementById('previewImg');
+  const submitBtn = document.getElementById('submitBtn');
+
+  if (dropZone) {
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      fileInput.files = e.dataTransfer.files;
+      showPreview(fileInput.files[0]);
+    });
+    fileInput.addEventListener('change', () => showPreview(fileInput.files[0]));
+  }
+
+  function showPreview(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => { previewImg.src = e.target.result; preview.style.display = 'block'; submitBtn.disabled = false; };
+    reader.readAsDataURL(file);
+  }
+</script>
+{% endblock %}

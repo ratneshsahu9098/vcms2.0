@@ -1,0 +1,116 @@
+{% extends "layout.html" %}
+{% block title %}AI Insights{% endblock %}
+{% block page_title %}AI Fleet Insights{% endblock %}
+
+{% block content %}
+{% if not ollama_running %}
+<div class="panel" style="text-align:center; padding:60px 20px;">
+  <i class="fa-solid fa-brain" style="font-size:3rem; color:var(--text-muted); margin-bottom:16px;"></i>
+  <h3 style="color:#fff;">Ollama is not running</h3>
+  <p style="color:var(--text-muted); margin:10px 0 20px;">Start Ollama to generate AI insights.</p>
+  <code style="background:var(--bg); padding:8px 16px; border-radius:8px; color:var(--green);">ollama serve</code>
+</div>
+
+{% elif not insights %}
+<div class="panel" style="text-align:center; padding:60px 20px;">
+  <i class="fa-solid fa-brain" style="font-size:3rem; color:var(--blue); margin-bottom:16px;"></i>
+  <h3 style="color:#fff;">Generate Fleet Insights</h3>
+  <p style="color:var(--text-muted); margin:10px 0 20px;">AI will analyze your fleet data and provide compliance insights, risk scores, and recommendations.</p>
+  <a href="{{ url_for('ai_insights') }}" class="btn btn-primary btn-lg">
+    <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Insights
+  </a>
+</div>
+
+{% else %}
+
+<div class="detail-card" style="margin-bottom:20px;">
+  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+    <h3 style="color:#fff; margin:0;"><i class="fa-solid fa-brain" style="color:var(--blue);"></i> Fleet Compliance Analysis</h3>
+    <a href="{{ url_for('ai_insights') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="fa-solid fa-rotate"></i> Regenerate
+    </a>
+  </div>
+
+  {% if insights.risk_summary %}
+  <div class="insight-section">
+    <h4 class="insight-title"><i class="fa-solid fa-triangle-exclamation" style="color:var(--orange);"></i> Risk Summary</h4>
+    <p style="color:var(--text); line-height:1.7; margin:0;">{{ insights.risk_summary }}</p>
+  </div>
+  {% endif %}
+
+  {% if insights.top_issues %}
+  <div class="insight-section">
+    <h4 class="insight-title"><i class="fa-solid fa-circle-exclamation" style="color:var(--red);"></i> Top Issues</h4>
+    <ul class="insight-list">
+      {% for issue in insights.top_issues %}
+      <li>{{ issue }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if insights.recommendations %}
+  <div class="insight-section">
+    <h4 class="insight-title"><i class="fa-solid fa-lightbulb" style="color:var(--yellow);"></i> Recommendations</h4>
+    <ul class="insight-list insight-recommendations">
+      {% for rec in insights.recommendations %}
+      <li>{{ rec }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if insights.monthly_outlook %}
+  <div class="insight-section">
+    <h4 class="insight-title"><i class="fa-solid fa-calendar-days" style="color:var(--blue);"></i> Monthly Outlook</h4>
+    <p style="color:var(--text); line-height:1.7; margin:0;">{{ insights.monthly_outlook }}</p>
+  </div>
+  {% endif %}
+</div>
+
+{% if insights.vehicle_risks %}
+<div class="detail-card">
+  <h4 style="color:#fff; margin:0 0 16px;"><i class="fa-solid fa-car-burst" style="color:var(--red);"></i> Vehicle Risk Assessment</h4>
+  <div class="table-wrap">
+    <table class="table-main">
+      <thead>
+        <tr>
+          <th>Vehicle</th>
+          <th>Owner</th>
+          <th>Risk Level</th>
+          <th>Reason</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for vr in insights.vehicle_risks %}
+        <tr>
+          <td style="font-weight:600; color:#fff;">{{ vr.vehicle }}</td>
+          <td>{{ vr.owner }}</td>
+          <td>
+            {% if vr.risk_level == 'high' %}
+            <span class="badge-status status-red">High</span>
+            {% elif vr.risk_level == 'medium' %}
+            <span class="badge-status status-orange">Medium</span>
+            {% else %}
+            <span class="badge-status status-green">Low</span>
+            {% endif %}
+          </td>
+          <td style="white-space:normal; max-width:400px;">{{ vr.reason }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endif %}
+
+<style>
+  .insight-section { margin-top:20px; padding-top:16px; border-top:1px solid var(--border); }
+  .insight-title { font-size:0.95rem; font-weight:700; color:#fff; margin:0 0 10px; display:flex; align-items:center; gap:8px; }
+  .insight-list { margin:0; padding-left:20px; }
+  .insight-list li { color:var(--text); margin-bottom:8px; line-height:1.6; font-size:0.9rem; }
+  .insight-recommendations li { color:var(--green); }
+</style>
+{% endblock %}

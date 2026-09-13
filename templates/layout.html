@@ -36,6 +36,17 @@
       <a href="{{ url_for('reports') }}" class="{{ 'active' if request.endpoint == 'reports' }}">
         <i class="fa-solid fa-chart-column"></i> Reports
       </a>
+      <div class="sidebar-divider"></div>
+      <a href="{{ url_for('ai_chat') }}" class="{{ 'active' if request.endpoint == 'ai_chat' }}">
+        <i class="fa-solid fa-robot"></i> AI Assistant
+      </a>
+      <a href="{{ url_for('ai_parse_document') }}" class="{{ 'active' if request.endpoint == 'ai_parse_document' }}">
+        <i class="fa-solid fa-file-circle-check"></i> Doc Scanner
+      </a>
+      <a href="{{ url_for('ai_insights') }}" class="{{ 'active' if request.endpoint == 'ai_insights' }}">
+        <i class="fa-solid fa-brain"></i> AI Insights
+      </a>
+      <div class="sidebar-divider"></div>
       <a href="{{ url_for('backup') }}" class="{{ 'active' if request.endpoint == 'backup' }}">
         <i class="fa-solid fa-database"></i> Backup
       </a>
