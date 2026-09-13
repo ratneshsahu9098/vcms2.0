@@ -23,7 +23,7 @@ def get_model():
     settings = _get_settings()
     model = settings.get("openrouter_model", "")
     if not model:
-        model = os.environ.get("VCMS_OPENROUTER_MODEL", "nvidia/llama-nemotron-embed-vl-1b-v2:free")
+        model = os.environ.get("VCMS_OPENROUTER_MODEL", "google/gemma-3-1b-it:free")
     return model
 
 
@@ -39,6 +39,197 @@ def get_headers():
 def check_api_key():
     return bool(get_api_key().strip())
 
+
+# ---------------------------------------------------------------------------
+# Fleet context builder — full vehicle list for case-insensitive search
+# ---------------------------------------------------------------------------
+
+def build_fleet_context(vehicles, today=None):
+    today = today or date.today()
+    total = len(vehicles)
+    expired, expiring_7, expiring_30, valid = 0, 0, 0, 0
+    doc_stats = {"PUC": 0, "Fitness": 0, "Permit": 0, "Tax": 0, "Insurance": 0}
+    owner_map = {}
+    type_map = {}
+    district_map = {}
+
+    all_vehicles = []
+    for v in vehicles:
+        statuses = v.document_statuses()
+        worst = v.overall_status()
+        if worst == "status-red":
+            expired += 1
+        elif worst == "status-orange":
+            expiring_7 += 1
+        elif worst == "status-yellow":
+            expiring_30 += 1
+        else:
+            valid += 1
+
+        for label, info in statuses.items():
+            if info["class"] in ("status-red", "status-orange", "status-yellow"):
+                doc_stats[label] = doc_stats.get(label, 0) + 1
+
+        owner_map.setdefault(v.owner_name, []).append(v.vehicle_number)
+        type_map.setdefault(v.vehicle_type or "Unspecified", []).append(v.vehicle_number)
+        if v.district:
+            district_map.setdefault(v.district, []).append(v.vehicle_number)
+
+        doc_list = []
+        for label, info in statuses.items():
+            days = (info["expiry"] - today).days if info["expiry"] else None
+            doc_list.append({
+                "document": label,
+                "expiry": info["expiry"].isoformat() if info["expiry"] else "Not Set",
+                "status": info["status"],
+                "days_left": days,
+            })
+
+        all_vehicles.append({
+            "vehicle_number": v.vehicle_number,
+            "chassis_number": v.chassis_number,
+            "engine_number": v.engine_number or "",
+            "owner_name": v.owner_name,
+            "mobile_number": v.mobile_number,
+            "vehicle_type": v.vehicle_type or "",
+            "district": v.district or "",
+            "registration_date": v.registration_date.isoformat() if v.registration_date else "",
+            "documents": doc_list,
+            "insurance_company": v.insurance_company or "",
+            "policy_number": v.policy_number or "",
+            "remarks": v.remarks or "",
+        })
+
+    return {
+        "summary": {
+            "total_vehicles": total,
+            "expired": expired,
+            "expiring_within_7_days": expiring_7,
+            "expiring_within_30_days": expiring_30,
+            "fully_valid": valid,
+            "documents_with_issues": doc_stats,
+        },
+        "owners": {k: len(v) for k, v in owner_map.items()},
+        "vehicle_types": {k: len(v) for k, v in type_map.items()},
+        "districts": {k: len(v) for k, v in district_map.items()},
+        "vehicles": all_vehicles,
+    }
+
+
+# ---------------------------------------------------------------------------
+# System prompt
+# ---------------------------------------------------------------------------
+
+SYSTEM_PROMPT = """You are VCMS AI Assistant — an expert on Indian vehicle compliance management.
+
+Your Role:
+- Help fleet managers track vehicle document expiries (PUC, Fitness, Permit, Tax, Insurance)
+- Answer questions about specific vehicles, owners, compliance status
+- Provide actionable recommendations for renewals
+
+CRITICAL RULES:
+1. Vehicle numbers are CASE-INSENSITIVE. When user types "mh12ab1234", match it against "MH12AB1234" in the data. Always do case-insensitive matching.
+2. Search by partial matches too — if user types "MH12", show all vehicles starting with MH12.
+3. Owner names are also case-insensitive.
+4. Always show the full vehicle number in your response (uppercase as stored in data).
+5. Use today's date: {today}
+
+Response Format:
+- Use markdown tables for multiple vehicles
+- Use bullet points for lists
+- Bold key info like vehicle numbers, dates, status
+- Be concise but complete
+- If no match found, say so clearly and suggest what the user might have meant
+
+Fleet Data:
+{fleet_context}
+"""
+
+
+# ---------------------------------------------------------------------------
+# Chat assistant
+# ---------------------------------------------------------------------------
+
+def ask_assistant(user_question, vehicles, history=None):
+    context = build_fleet_context(vehicles)
+    context_str = json.dumps(context, indent=2, default=str)
+    today = date.today().isoformat()
+    system_msg = SYSTEM_PROMPT.format(fleet_context=context_str, today=today)
+
+    messages = [{"role": "system", "content": system_msg}]
+
+    if history:
+        for msg in history[-20:]:
+            messages.append({"role": msg["role"], "content": msg["content"]})
+
+    messages.append({"role": "user", "content": user_question})
+
+    reply = chat_completion(messages)
+    return reply or "I couldn't generate a response. Please try again."
+
+
+def ask_assistant_stream(user_question, vehicles, history=None):
+    context = build_fleet_context(vehicles)
+    context_str = json.dumps(context, indent=2, default=str)
+    today = date.today().isoformat()
+    system_msg = SYSTEM_PROMPT.format(fleet_context=context_str, today=today)
+
+    messages = [{"role": "system", "content": system_msg}]
+
+    if history:
+        for msg in history[-20:]:
+            messages.append({"role": msg["role"], "content": msg["content"]})
+
+    messages.append({"role": "user", "content": user_question})
+
+    return chat_completion_stream(messages)
+
+
+# ---------------------------------------------------------------------------
+# Chat completion
+# ---------------------------------------------------------------------------
+
+def chat_completion(messages, model=None):
+    model = model or get_model()
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.3,
+    }
+    r = requests.post(OPENROUTER_URL, json=payload, headers=get_headers(), timeout=120)
+    r.raise_for_status()
+    data = r.json()
+    content = data.get("choices", [{}])[0].get("message", {}).get("content")
+    return content.strip() if content else None
+
+
+def chat_completion_stream(messages, model=None):
+    model = model or get_model()
+    payload = {
+        "model": model,
+        "messages": messages,
+        "stream": True,
+        "temperature": 0.3,
+    }
+    r = requests.post(OPENROUTER_URL, json=payload, headers=get_headers(), stream=True, timeout=120)
+    r.raise_for_status()
+    for line in r.iter_lines():
+        if line:
+            line = line.decode("utf-8")
+            if line.startswith("data: "):
+                data = line[6:]
+                if data.strip() == "[DONE]":
+                    break
+                chunk = json.loads(data)
+                if "choices" in chunk and chunk["choices"]:
+                    delta = chunk["choices"][0].get("delta", {})
+                    if "content" in delta:
+                        yield delta["content"]
+
+
+# ---------------------------------------------------------------------------
+# API test
+# ---------------------------------------------------------------------------
 
 def test_api_connection():
     import time
@@ -106,7 +297,6 @@ def test_api_connection_debug():
 
     start = time.time()
     try:
-        t_dns = time.time()
         r = requests.post(OPENROUTER_URL, json=payload, headers=headers, timeout=60)
         total = round(time.time() - start, 2)
 
@@ -144,141 +334,6 @@ def test_api_connection_debug():
         debug["timing"]["total_seconds"] = round(time.time() - start, 2)
         debug["response"] = {"error": str(e)}
         return {"ok": False, "debug": debug}
-
-
-def chat_completion(messages, model=None):
-    model = model or get_model()
-    payload = {
-        "model": model,
-        "messages": messages,
-        "temperature": 0.3,
-    }
-    r = requests.post(OPENROUTER_URL, json=payload, headers=get_headers(), timeout=120)
-    r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"]
-
-
-def chat_completion_stream(messages, model=None):
-    model = model or get_model()
-    payload = {
-        "model": model,
-        "messages": messages,
-        "stream": True,
-        "temperature": 0.3,
-    }
-    r = requests.post(OPENROUTER_URL, json=payload, headers=get_headers(), stream=True, timeout=120)
-    r.raise_for_status()
-    for line in r.iter_lines():
-        if line:
-            line = line.decode("utf-8")
-            if line.startswith("data: "):
-                data = line[6:]
-                if data.strip() == "[DONE]":
-                    break
-                chunk = json.loads(data)
-                if "choices" in chunk and chunk["choices"]:
-                    delta = chunk["choices"][0].get("delta", {})
-                    if "content" in delta:
-                        yield delta["content"]
-
-
-# ---------------------------------------------------------------------------
-# Fleet context builder
-# ---------------------------------------------------------------------------
-
-def build_fleet_context(vehicles, today=None):
-    today = today or date.today()
-    total = len(vehicles)
-    expired, expiring_7, expiring_30, valid = 0, 0, 0, 0
-    doc_stats = {"PUC": 0, "Fitness": 0, "Permit": 0, "Tax": 0, "Insurance": 0}
-    owner_map = {}
-    type_map = {}
-
-    for v in vehicles:
-        statuses = v.document_statuses()
-        worst = v.overall_status()
-        if worst == "status-red":
-            expired += 1
-        elif worst == "status-orange":
-            expiring_7 += 1
-        elif worst == "status-yellow":
-            expiring_30 += 1
-        else:
-            valid += 1
-
-        for label, info in statuses.items():
-            if info["class"] in ("status-red", "status-orange", "status-yellow"):
-                doc_stats[label] = doc_stats.get(label, 0) + 1
-
-        owner_map.setdefault(v.owner_name, []).append(v.vehicle_number)
-        type_map.setdefault(v.vehicle_type or "Unspecified", []).append(v.vehicle_number)
-
-    expiring_details = []
-    for v in vehicles:
-        statuses = v.document_statuses()
-        for label, info in statuses.items():
-            expiry = info["expiry"]
-            if expiry and expiry <= today + timedelta(days=30):
-                days_left = (expiry - today).days
-                status = "expired" if days_left < 0 else f"expires in {days_left}d"
-                expiring_details.append({
-                    "vehicle": v.vehicle_number,
-                    "owner": v.owner_name,
-                    "document": label,
-                    "expiry": expiry.isoformat(),
-                    "status": status,
-                })
-    expiring_details.sort(key=lambda x: x["expiry"])
-
-    return {
-        "total": total,
-        "expired": expired,
-        "expiring_within_7_days": expiring_7,
-        "expiring_within_30_days": expiring_30,
-        "valid": valid,
-        "documents_with_issues": doc_stats,
-        "owners": {k: len(v) for k, v in owner_map.items()},
-        "vehicle_types": {k: len(v) for k, v in type_map.items()},
-        "expiring_details": expiring_details[:30],
-    }
-
-
-# ---------------------------------------------------------------------------
-# Chat assistant
-# ---------------------------------------------------------------------------
-
-SYSTEM_PROMPT = """You are VCMS AI Assistant for a Vehicle Compliance Management System.
-You help fleet managers with questions about their vehicles, document expiries, compliance status, and recommendations.
-
-You have access to the current fleet data below. Answer questions accurately based on this data.
-Be concise and direct. Use tables or bullet points when helpful.
-If asked about something not in the data, say so clearly.
-
-Current Fleet Data:
-{fleet_context}
-"""
-
-
-def ask_assistant(user_question, vehicles):
-    context = build_fleet_context(vehicles)
-    context_str = json.dumps(context, indent=2, default=str)
-    system_msg = SYSTEM_PROMPT.format(fleet_context=context_str)
-    messages = [
-        {"role": "system", "content": system_msg},
-        {"role": "user", "content": user_question},
-    ]
-    return chat_completion(messages)
-
-
-def ask_assistant_stream(user_question, vehicles):
-    context = build_fleet_context(vehicles)
-    context_str = json.dumps(context, indent=2, default=str)
-    system_msg = SYSTEM_PROMPT.format(fleet_context=context_str)
-    messages = [
-        {"role": "system", "content": system_msg},
-        {"role": "user", "content": user_question},
-    ]
-    return chat_completion_stream(messages)
 
 
 # ---------------------------------------------------------------------------

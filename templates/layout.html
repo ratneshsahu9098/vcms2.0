@@ -40,6 +40,9 @@
       <a href="{{ url_for('ai_chat') }}" class="{{ 'active' if request.endpoint == 'ai_chat' }}">
         <i class="fa-solid fa-robot"></i> AI Assistant
       </a>
+      <a href="{{ url_for('ai_chat_history') }}" class="{{ 'active' if request.endpoint == 'ai_chat_history' }}">
+        <i class="fa-solid fa-clock-rotate-left"></i> Chat History
+      </a>
       <a href="{{ url_for('ai_parse_document') }}" class="{{ 'active' if request.endpoint == 'ai_parse_document' }}">
         <i class="fa-solid fa-file-circle-check"></i> Doc Scanner
       </a>

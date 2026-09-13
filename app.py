@@ -14,7 +14,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import pandas as pd
 
 from config import Config
-from models import db, Vehicle, TaxDetail
+from models import db, Vehicle, TaxDetail, ChatSession, ChatMessage
 from utils import (
     parse_date, allowed_file, normalize_import_dataframe,
     create_backup, list_backups, whatsapp_message, whatsapp_expired_reminder, generate_vehicle_qr
@@ -956,38 +956,72 @@ def register_routes(app):
     # ---- AI Chat Assistant --------------------------------------------------
 
     @app.route("/ai/chat", methods=["GET", "POST"])
+    @app.route("/ai/chat/<int:session_id>", methods=["GET", "POST"])
     @login_required
-    def ai_chat():
+    def ai_chat(session_id=None):
         if not ai_service.check_api_key():
-            flash("Ollama is not running. Please start Ollama and try again.", "error")
-            return render_template("ai_chat.html", messages=[], ollama_running=False)
+            flash("API key not configured. Set it in Settings.", "error")
+            return render_template("ai_chat.html", messages=[], ollama_running=False, session=None)
 
         if request.method == "POST":
             user_msg = request.form.get("message", "").strip()
             if not user_msg:
-                return render_template("ai_chat.html", messages=[], ollama_running=True)
+                flash("Please type a message.", "error")
+                return redirect(url_for("ai_chat"))
 
-            messages = session.get("ai_chat_messages", [])
-            messages.append({"role": "user", "content": user_msg})
+            sid = request.form.get("session_id")
+            if sid:
+                chat_session = ChatSession.query.get_or_404(int(sid))
+            else:
+                chat_session = ChatSession(title=user_msg[:80])
+                db.session.add(chat_session)
+                db.session.commit()
 
+            user_message = ChatMessage(session_id=chat_session.id, role="user", content=user_msg)
+            db.session.add(user_message)
+            db.session.commit()
+
+            history = [{"role": m.role, "content": m.content} for m in chat_session.messages.all()]
             vehicles = Vehicle.query.all()
             try:
-                ai_reply = ai_service.ask_assistant(user_msg, vehicles)
+                ai_reply = ai_service.ask_assistant(user_msg, vehicles, history=history)
             except Exception as exc:
                 ai_reply = f"Error communicating with AI: {exc}"
 
-            messages.append({"role": "assistant", "content": ai_reply})
-            session["ai_chat_messages"] = messages
-            return render_template("ai_chat.html", messages=messages, ollama_running=True)
+            ai_message = ChatMessage(session_id=chat_session.id, role="assistant", content=ai_reply or "No response.")
+            db.session.add(ai_message)
+            chat_session.updated_at = datetime.utcnow()
+            db.session.commit()
 
-        session.pop("ai_chat_messages", None)
-        return render_template("ai_chat.html", messages=[], ollama_running=True)
+            return redirect(url_for("ai_chat", session_id=chat_session.id))
 
-    @app.route("/ai/chat/clear", methods=["POST"])
+        chat_session = None
+        messages = []
+        if session_id:
+            chat_session = ChatSession.query.get_or_404(session_id)
+            messages = [{"role": m.role, "content": m.content} for m in chat_session.messages.order_by(ChatMessage.id).all()]
+
+        return render_template("ai_chat.html", messages=messages, ollama_running=True, session=chat_session)
+
+    @app.route("/ai/chat/new")
     @login_required
-    def ai_chat_clear():
-        session.pop("ai_chat_messages", None)
+    def ai_chat_new():
         return redirect(url_for("ai_chat"))
+
+    @app.route("/ai/chat/<int:session_id>/delete", methods=["POST"])
+    @login_required
+    def ai_chat_delete(session_id):
+        chat_session = ChatSession.query.get_or_404(session_id)
+        db.session.delete(chat_session)
+        db.session.commit()
+        flash("Chat deleted.", "success")
+        return redirect(url_for("ai_chat_history"))
+
+    @app.route("/ai/chat/history")
+    @login_required
+    def ai_chat_history():
+        sessions = ChatSession.query.order_by(ChatSession.updated_at.desc()).all()
+        return render_template("ai_chat_history.html", sessions=sessions)
 
     # ---- AI Document Parser -------------------------------------------------
 
