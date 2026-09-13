@@ -119,36 +119,6 @@
       </div>
     </div>
 
-    <div class="tax-quick-pay">
-      <h4 class="section-heading"><i class="fa-solid fa-bolt"></i> Quick Tax Pay & Extend</h4>
-      <p class="text-muted">Select frequency to auto-extend tax period from the current expiry date.</p>
-      <div class="form-grid">
-        <div class="form-group">
-          <label>Extend By</label>
-          <select id="tax_extend_freq" class="form-select">
-            <option value="">Select frequency</option>
-            <option value="monthly">Monthly</option>
-            <option value="quarterly">Quarterly</option>
-            <option value="halfyearly">Half-Yearly</option>
-            <option value="yearly">Yearly</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>New Tax From</label>
-          <input type="text" id="tax_new_from" class="form-control" readonly placeholder="—">
-        </div>
-        <div class="form-group">
-          <label>New Tax Expiry</label>
-          <input type="text" id="tax_new_expiry" class="form-control" readonly placeholder="—">
-        </div>
-        <div class="form-group tax-quick-actions">
-          <button type="button" id="btn_apply_tax" class="btn btn-success"><i class="fa-solid fa-check"></i> Apply</button>
-          <button type="button" id="btn_clear_tax" class="btn btn-outline-secondary"><i class="fa-solid fa-xmark"></i> Clear</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <div class="form-section">
     <h4 class="form-section-title"><i class="fa-solid fa-shield-halved"></i> Insurance Info</h4>
     <div class="form-grid">
@@ -200,46 +170,5 @@
   .form-section-title i { color:var(--blue); font-size:0.9rem; }
   .field-hint { display:block; font-size:0.78rem; color:var(--text-muted); margin-top:3px; }
 </style>
-<script>
-(function() {
-  const MONTHS = { monthly: 1, quarterly: 3, halfyearly: 6, yearly: 12 };
-  const taxFrom = document.getElementById('tax_from');
-  const taxExpiry = document.getElementById('tax_expiry');
-  const taxMode = document.getElementById('tax_mode');
-  const freq = document.getElementById('tax_extend_freq');
-  const newFrom = document.getElementById('tax_new_from');
-  const newExpiry = document.getElementById('tax_new_expiry');
-  const btnApply = document.getElementById('btn_apply_tax');
-  const btnClear = document.getElementById('btn_clear_tax');
 
-  freq.addEventListener('change', function() {
-    const modeMap = { monthly: 'Monthly (M)', quarterly: 'Quarterly (Q)', halfyearly: 'Half-Yearly (HY)', yearly: 'Yearly (Y)' };
-    if (modeMap[this.value]) taxMode.value = modeMap[this.value];
-    const base = taxExpiry.value ? new Date(taxExpiry.value) : new Date();
-    const from = new Date(base);
-    from.setDate(from.getDate() + 1);
-    const to = new Date(from);
-    to.setMonth(to.getMonth() + (MONTHS[this.value] || 3));
-    to.setDate(to.getDate() - 1);
-    newFrom.value = fmt(from);
-    newExpiry.value = fmt(to);
-  });
-
-  btnApply.addEventListener('click', function() {
-    if (!newFrom.value || !newExpiry.value) return;
-    taxFrom.value = newFrom.value;
-    taxExpiry.value = newExpiry.value;
-  });
-
-  btnClear.addEventListener('click', function() {
-    freq.value = '';
-    newFrom.value = '';
-    newExpiry.value = '';
-  });
-
-  function fmt(d) {
-    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-  }
-})();
-</script>
 {% endblock %}

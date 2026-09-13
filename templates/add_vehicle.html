@@ -120,6 +120,8 @@
         <input type="number" step="0.01" name="tax_amount" class="form-control" value="{{ form.get('tax_amount','') }}">
       </div>
     </div>
+    </div>
+  </div>
 
   <div class="form-section">
     <h4 class="form-section-title"><i class="fa-solid fa-shield-halved"></i> Insurance Info</h4>
@@ -172,45 +174,6 @@
 </style>
 <script>
 (function() {
-  const MONTHS = { monthly: 1, quarterly: 3, halfyearly: 6, yearly: 12 };
-  const taxFrom = document.getElementById('tax_from');
-  const taxExpiry = document.getElementById('tax_expiry');
-  const taxMode = document.getElementById('tax_mode');
-  const freq = document.getElementById('tax_extend_freq');
-  const newFrom = document.getElementById('tax_new_from');
-  const newExpiry = document.getElementById('tax_new_expiry');
-  const btnApply = document.getElementById('btn_apply_tax');
-  const btnClear = document.getElementById('btn_clear_tax');
-
-  freq.addEventListener('change', function() {
-    const modeMap = { monthly: 'Monthly (M)', quarterly: 'Quarterly (Q)', halfyearly: 'Half-Yearly (HY)', yearly: 'Yearly (Y)' };
-    if (modeMap[this.value]) taxMode.value = modeMap[this.value];
-    const base = taxExpiry.value ? new Date(taxExpiry.value) : new Date();
-    const from = new Date(base);
-    from.setDate(from.getDate() + 1);
-    const to = new Date(from);
-    to.setMonth(to.getMonth() + (MONTHS[this.value] || 3));
-    to.setDate(to.getDate() - 1);
-    newFrom.value = fmt(from);
-    newExpiry.value = fmt(to);
-  });
-
-  btnApply.addEventListener('click', function() {
-    if (!newFrom.value || !newExpiry.value) return;
-    taxFrom.value = newFrom.value;
-    taxExpiry.value = newExpiry.value;
-  });
-
-  btnClear.addEventListener('click', function() {
-    freq.value = '';
-    newFrom.value = '';
-    newExpiry.value = '';
-  });
-
-  function fmt(d) {
-    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-  }
-
   // Inline duplicate check
   function checkDuplicate(field, value, hintId) {
     const hint = document.getElementById(hintId);
