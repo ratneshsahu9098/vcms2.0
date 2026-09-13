@@ -275,6 +275,10 @@ SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
 DEFAULT_SETTINGS = {
     "openrouter_api_key": "",
     "openrouter_model": "nvidia/llama-nemotron-embed-vl-1b-v2:free",
+    "gdrive_auto_sync": True,
+    "gdrive_last_sync": "",
+    "gdrive_last_sync_status": "",
+    "gdrive_user_email": "",
 }
 
 

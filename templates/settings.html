@@ -81,6 +81,68 @@
   <div id="testResult" style="display:none; margin-top:16px; padding:14px; border-radius:8px; font-size:0.9rem;"></div>
   <div id="debugOutput" style="display:none; margin-top:12px;"></div>
 </div>
+
+<div class="panel" style="margin-top:20px;">
+  <h3 class="panel-title"><i class="fa-brands fa-google-drive"></i> Google Drive Backup</h3>
+  <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;">
+    Connect your Google account to auto-sync backups to Google Drive. Like WhatsApp backups.
+  </p>
+
+  {% if ai_settings.gdrive_connected %}
+  <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+    <span class="badge-status status-green"><i class="fa-solid fa-check-circle"></i> Connected</span>
+    {% if ai_settings.gdrive_user_email %}
+    <span style="color:var(--text); font-weight:500;">{{ ai_settings.gdrive_user_email }}</span>
+    {% endif %}
+    <form method="POST" action="{{ url_for('gdrive_disconnect') }}" style="display:inline;" onsubmit="return confirm('Disconnect Google Drive?');">
+      <button type="submit" class="btn btn-outline-danger btn-sm"><i class="fa-solid fa-link-slash"></i> Disconnect</button>
+    </form>
+  </div>
+
+  <div class="form-grid" style="margin-bottom:16px;">
+    <div class="form-group">
+      <label>Last Sync</label>
+      <p style="color:var(--text); margin:0;">{{ ai_settings.gdrive_last_sync or 'Never' }}</p>
+    </div>
+    <div class="form-group">
+      <label>Status</label>
+      <p style="margin:0;">
+        {% if ai_settings.gdrive_last_sync_status == 'success' %}
+        <span class="badge-status status-green"><i class="fa-solid fa-check"></i> Success</span>
+        {% elif ai_settings.gdrive_last_sync_status %}
+        <span class="badge-status status-red"><i class="fa-solid fa-xmark"></i> {{ ai_settings.gdrive_last_sync_status }}</span>
+        {% else %}
+        <span class="badge-status status-gray">No sync yet</span>
+        {% endif %}
+      </p>
+    </div>
+  </div>
+
+  <form method="POST" style="margin-bottom:0;">
+    <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+      <label style="display:flex; align-items:center; gap:6px; color:var(--text); font-size:0.9rem; cursor:pointer;">
+        <input type="checkbox" name="gdrive_auto_sync" {% if ai_settings.get('gdrive_auto_sync', True) %}checked{% endif %}
+               style="accent-color:var(--blue);" onchange="this.form.submit();">
+        Auto-sync on every vehicle change
+      </label>
+      <button type="submit" class="btn btn-primary btn-sm"><i class="fa-solid fa-check"></i> Save</button>
+    </div>
+  </form>
+
+  {% else %}
+  <div style="text-align:center; padding:30px 20px; background:var(--charcoal-light); border:1px dashed var(--border); border-radius:10px;">
+    <i class="fa-brands fa-google-drive" style="font-size:2.5rem; color:var(--blue); margin-bottom:12px;"></i>
+    <p style="color:var(--text); margin:0 0 8px; font-weight:500;">Not connected</p>
+    <p style="color:var(--text-muted); font-size:0.85rem; margin:0 0 16px;">Connect your Google account to enable cloud backup sync.</p>
+    <a href="{{ url_for('gdrive_connect') }}" class="btn btn-primary">
+      <i class="fa-solid fa-link"></i> Connect Google Drive
+    </a>
+    <p style="color:var(--text-muted); font-size:0.78rem; margin-top:12px;">
+      Requires <code>client_secret.json</code> from Google Cloud Console.
+    </p>
+  </div>
+  {% endif %}
+</div>
 {% endblock %}
 
 {% block scripts %}

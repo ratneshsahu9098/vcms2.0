@@ -26,3 +26,6 @@ class Config:
     # OpenRouter AI settings
     OPENROUTER_API_KEY = os.environ.get("VCMS_OPENROUTER_KEY", "")
     OPENROUTER_MODEL = os.environ.get("VCMS_OPENROUTER_MODEL", "nvidia/llama-nemotron-embed-vl-1b-v2:free")
+
+    # Google Drive settings
+    GDRIVE_ENABLED = os.environ.get("VCMS_GDRIVE_ENABLED", "false").lower() == "true"

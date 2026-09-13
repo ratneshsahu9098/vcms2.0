@@ -1,5 +1,6 @@
 import io
 import json
+import logging
 import os
 import shutil
 import urllib.parse
@@ -20,6 +21,9 @@ from utils import (
     create_backup, list_backups, whatsapp_message, whatsapp_expired_reminder, generate_vehicle_qr
 )
 import ai_service
+import google_drive
+
+logger = logging.getLogger(__name__)
 
 
 def create_app():
@@ -833,8 +837,14 @@ def register_routes(app):
                     flash("Backup file not found.", "error")
             return redirect(url_for("backup"))
 
+        from utils import load_settings
         backups = list_backups(app.config["BACKUP_FOLDER"])
-        return render_template("backup.html", backups=backups)
+        gdrive_backups = google_drive.list_backups()
+        gdrive_connected = google_drive.is_connected()
+        app_settings = load_settings()
+        return render_template("backup.html", backups=backups,
+                               gdrive_backups=gdrive_backups, gdrive_connected=gdrive_connected,
+                               app_settings=app_settings)
 
     @app.route("/backup/download/<name>")
     @login_required
@@ -844,6 +854,142 @@ def register_routes(app):
             abort(404)
         return send_file(path, as_attachment=True, download_name=name)
 
+    # ---- Google Drive Sync ------------------------------------------------
+
+    @app.route("/settings/google/connect")
+    @login_required
+    def gdrive_connect():
+        flow, error = google_drive.start_oauth_flow()
+        if error:
+            flash(error, "error")
+            return redirect(url_for("settings"))
+        redirect_uri = url_for("gdrive_callback", _external=True)
+        auth_url, _ = flow.authorization_url(prompt="consent", redirect_uri=redirect_uri)
+        return redirect(auth_url)
+
+    @app.route("/settings/google/callback")
+    def gdrive_callback():
+        from utils import load_settings, save_settings
+        code = request.args.get("code")
+        if not code:
+            flash("Google Drive authorization failed.", "error")
+            return redirect(url_for("settings"))
+        redirect_uri = url_for("gdrive_callback", _external=True)
+        result = google_drive.save_token_from_code(code, redirect_uri)
+        if result.get("ok"):
+            email = google_drive.get_user_email()
+            settings = load_settings()
+            settings["gdrive_user_email"] = email or ""
+            save_settings(settings)
+            flash(f"Google Drive connected as {email or 'unknown'}", "success")
+        else:
+            flash(f"Google Drive connection failed: {result.get('error', 'Unknown error')}", "error")
+        return redirect(url_for("settings"))
+
+    @app.route("/settings/google/disconnect", methods=["POST"])
+    @login_required
+    def gdrive_disconnect():
+        from utils import load_settings, save_settings
+        google_drive.disconnect()
+        settings = load_settings()
+        settings["gdrive_user_email"] = ""
+        settings["gdrive_last_sync"] = ""
+        settings["gdrive_last_sync_status"] = ""
+        save_settings(settings)
+        flash("Google Drive disconnected.", "success")
+        return redirect(url_for("settings"))
+
+    @app.route("/backup/sync", methods=["POST"])
+    @login_required
+    def gdrive_sync():
+        from utils import load_settings, save_settings
+        db_path = app.config["SQLALCHEMY_DATABASE_URI"].replace("sqlite:///", "")
+        name, backup_path = create_backup(db_path, app.config["BACKUP_FOLDER"])
+        result = google_drive.upload_backup(backup_path)
+        settings = load_settings()
+        if result.get("ok"):
+            settings["gdrive_last_sync"] = datetime.utcnow().strftime("%d %b %Y, %I:%M %p")
+            settings["gdrive_last_sync_status"] = "success"
+            save_settings(settings)
+            flash(f"Synced to Google Drive: {name}", "success")
+        else:
+            settings["gdrive_last_sync_status"] = f"error: {result.get('error', 'unknown')}"
+            save_settings(settings)
+            flash(f"Google Drive sync failed: {result.get('error', 'Unknown')}", "error")
+        return redirect(url_for("backup"))
+
+    @app.route("/backup/gdrive-list")
+    @login_required
+    def gdrive_list():
+        backups = google_drive.list_backups()
+        return jsonify(backups)
+
+    @app.route("/backup/gdrive-restore", methods=["POST"])
+    @login_required
+    def gdrive_restore():
+        file_id = request.form.get("file_id")
+        if not file_id:
+            flash("No backup selected.", "error")
+            return redirect(url_for("backup"))
+        db_path = app.config["SQLALCHEMY_DATABASE_URI"].replace("sqlite:///", "")
+        temp_path = os.path.join(app.config["BACKUP_FOLDER"], "gdrive_restore_temp.db")
+        result = google_drive.download_backup(file_id, temp_path)
+        if result.get("ok"):
+            db.session.remove()
+            shutil.copy2(temp_path, db_path)
+            os.remove(temp_path)
+            flash("Database restored from Google Drive backup.", "success")
+        else:
+            flash(f"Restore failed: {result.get('error', 'Unknown')}", "error")
+        return redirect(url_for("backup"))
+
+    @app.route("/backup/sync-status")
+    @login_required
+    def gdrive_sync_status():
+        from utils import load_settings
+        settings = load_settings()
+        connected = google_drive.is_connected()
+        return jsonify({
+            "connected": connected,
+            "email": settings.get("gdrive_user_email", ""),
+            "last_sync": settings.get("gdrive_last_sync", ""),
+            "last_status": settings.get("gdrive_last_sync_status", ""),
+            "auto_sync": settings.get("gdrive_auto_sync", True),
+        })
+
+    def sync_to_gdrive():
+        from utils import load_settings
+        settings = load_settings()
+        if not settings.get("gdrive_auto_sync", True):
+            return
+        if not google_drive.is_connected():
+            return
+        try:
+            db_path = app.config["SQLALCHEMY_DATABASE_URI"].replace("sqlite:///", "")
+            name, backup_path = create_backup(db_path, app.config["BACKUP_FOLDER"])
+            result = google_drive.upload_backup(backup_path)
+            settings = load_settings()
+            if result.get("ok"):
+                settings["gdrive_last_sync"] = datetime.utcnow().strftime("%d %b %Y, %I:%M %p")
+                settings["gdrive_last_sync_status"] = "success"
+            else:
+                settings["gdrive_last_sync_status"] = f"error: {result.get('error', '')}"
+            save_settings(settings)
+        except Exception as e:
+            logger.exception("Auto-sync to Google Drive failed")
+
+    @app.after_request
+    def auto_gdrive_sync(response):
+        if request.method == "POST" and response.status_code < 400:
+            gdrive_endpoints = (
+                "add_vehicle", "edit_vehicle", "delete_vehicle", "delete_all_vehicles",
+                "import_data", "restore",
+            )
+            if request.endpoint in gdrive_endpoints:
+                import threading
+                threading.Thread(target=sync_to_gdrive, daemon=True).start()
+        return response
+
     # ---- Settings ------------------------------------------------------------
 
     @app.route("/settings", methods=["GET", "POST"])
@@ -852,18 +998,21 @@ def register_routes(app):
         if request.method == "POST":
             api_key = request.form.get("openrouter_api_key", "").strip()
             model = request.form.get("openrouter_model", "").strip()
+            gdrive_auto = request.form.get("gdrive_auto_sync") == "on"
             from utils import load_settings, save_settings
             current = load_settings()
             if api_key is not None:
                 current["openrouter_api_key"] = api_key
             if model:
                 current["openrouter_model"] = model
+            current["gdrive_auto_sync"] = gdrive_auto
             save_settings(current)
             flash("Settings saved successfully.", "success")
             return redirect(url_for("settings"))
 
         from utils import load_settings
         ai_settings = load_settings()
+        ai_settings["gdrive_connected"] = google_drive.is_connected()
         return render_template("settings.html", ai_settings=ai_settings)
 
     @app.route("/settings/test-api", methods=["POST"])

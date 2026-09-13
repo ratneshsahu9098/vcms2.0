@@ -4,5 +4,7 @@ uploads/
 backups/
 exports/
 settings.json
+client_secret.json
+token.json
 *.db
 *.pyc
