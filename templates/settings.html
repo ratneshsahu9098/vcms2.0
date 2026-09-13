@@ -148,15 +148,15 @@ function testApi(forceDebug) {
     }
 
     if (data.ok) {
-      result.style.background = 'rgba(34,197,94,0.1)';
-      result.style.border = '1px solid rgba(34,197,94,0.3)';
+      result.style.background = 'var(--success-bg)';
+      result.style.border = '1px solid var(--success-border)';
       result.style.color = 'var(--green)';
       const elapsed = data.elapsed || (data.debug && data.debug.timing && data.debug.timing.total_seconds) || '?';
       result.innerHTML = '<i class="fa-solid fa-circle-check"></i> <strong>API is working!</strong> Model: ' +
         (data.debug ? data.debug.request.model : '') + ' | Response time: ' + elapsed + 's | AI says: "' + data.reply + '"';
     } else {
-      result.style.background = 'rgba(239,68,68,0.1)';
-      result.style.border = '1px solid rgba(239,68,68,0.3)';
+      result.style.background = 'var(--danger-bg)';
+      result.style.border = '1px solid var(--danger-border)';
       result.style.color = 'var(--red)';
       let errMsg = data.error || '';
       if (data.debug && data.debug.response) {
@@ -167,8 +167,8 @@ function testApi(forceDebug) {
   })
   .catch(err => {
     result.style.display = 'block';
-    result.style.background = 'rgba(239,68,68,0.1)';
-    result.style.border = '1px solid rgba(239,68,68,0.3)';
+    result.style.background = 'var(--danger-bg)';
+    result.style.border = '1px solid var(--danger-border)';
     result.style.color = 'var(--red)';
     result.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> <strong>Network error:</strong> ' + err;
   })
@@ -232,7 +232,7 @@ function escapeHtml(str) {
   .debug-panel { background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:16px; }
   .debug-section { margin-bottom:16px; }
   .debug-section:last-child { margin-bottom:0; }
-  .debug-heading { font-weight:700; color:#fff; font-size:0.9rem; margin-bottom:8px; display:flex; align-items:center; gap:8px; }
+  .debug-heading { font-weight:700; color:var(--text); font-size:0.9rem; margin-bottom:8px; display:flex; align-items:center; gap:8px; }
   .debug-time { color:var(--text-muted); font-weight:400; font-size:0.82rem; }
   .debug-row { margin-bottom:6px; font-size:0.85rem; color:var(--text); }
   .debug-label { color:var(--text-muted); font-weight:600; min-width:80px; display:inline-block; }

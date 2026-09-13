@@ -6,7 +6,7 @@
 {% if not ollama_running %}
 <div class="panel" style="text-align:center; padding:60px 20px;">
   <i class="fa-solid fa-brain" style="font-size:3rem; color:var(--text-muted); margin-bottom:16px;"></i>
-  <h3 style="color:#fff;">API Key Not Configured</h3>
+  <h3 style="color:var(--text);">API Key Not Configured</h3>
   <p style="color:var(--text-muted); margin:10px 0 20px;">Set your OpenRouter API key to generate AI insights.</p>
   <code style="background:var(--bg); padding:8px 16px; border-radius:8px; color:var(--green);">set VCMS_OPENROUTER_KEY=sk-or-...your-key-here</code>
   <p style="color:var(--text-muted); margin-top:12px; font-size:0.85rem;">Get a free key at <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a></p>
@@ -15,7 +15,7 @@
 {% elif not insights %}
 <div class="panel" style="text-align:center; padding:60px 20px;">
   <i class="fa-solid fa-brain" style="font-size:3rem; color:var(--blue); margin-bottom:16px;"></i>
-  <h3 style="color:#fff;">Generate Fleet Insights</h3>
+  <h3 style="color:var(--text);">Generate Fleet Insights</h3>
   <p style="color:var(--text-muted); margin:10px 0 20px;">AI will analyze your fleet data and provide compliance insights, risk scores, and recommendations.</p>
   <a href="{{ url_for('ai_insights') }}" class="btn btn-primary btn-lg">
     <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Insights
@@ -26,7 +26,7 @@
 
 <div class="detail-card" style="margin-bottom:20px;">
   <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-    <h3 style="color:#fff; margin:0;"><i class="fa-solid fa-brain" style="color:var(--blue);"></i> Fleet Compliance Analysis</h3>
+    <h3 style="color:var(--text); margin:0;"><i class="fa-solid fa-brain" style="color:var(--blue);"></i> Fleet Compliance Analysis</h3>
     <a href="{{ url_for('ai_insights') }}" class="btn btn-outline-secondary btn-sm">
       <i class="fa-solid fa-rotate"></i> Regenerate
     </a>
@@ -71,7 +71,7 @@
 
 {% if insights.vehicle_risks %}
 <div class="detail-card">
-  <h4 style="color:#fff; margin:0 0 16px;"><i class="fa-solid fa-car-burst" style="color:var(--red);"></i> Vehicle Risk Assessment</h4>
+  <h4 style="color:var(--text); margin:0 0 16px;"><i class="fa-solid fa-car-burst" style="color:var(--red);"></i> Vehicle Risk Assessment</h4>
   <div class="table-wrap">
     <table class="table-main">
       <thead>
@@ -85,7 +85,7 @@
       <tbody>
         {% for vr in insights.vehicle_risks %}
         <tr>
-          <td style="font-weight:600; color:#fff;">{{ vr.vehicle }}</td>
+          <td style="font-weight:600; color:var(--text);">{{ vr.vehicle }}</td>
           <td>{{ vr.owner }}</td>
           <td>
             {% if vr.risk_level == 'high' %}
@@ -109,7 +109,7 @@
 
 <style>
   .insight-section { margin-top:20px; padding-top:16px; border-top:1px solid var(--border); }
-  .insight-title { font-size:0.95rem; font-weight:700; color:#fff; margin:0 0 10px; display:flex; align-items:center; gap:8px; }
+  .insight-title { font-size:0.95rem; font-weight:700; color:var(--text); margin:0 0 10px; display:flex; align-items:center; gap:8px; }
   .insight-list { margin:0; padding-left:20px; }
   .insight-list li { color:var(--text); margin-bottom:8px; line-height:1.6; font-size:0.9rem; }
   .insight-recommendations li { color:var(--green); }

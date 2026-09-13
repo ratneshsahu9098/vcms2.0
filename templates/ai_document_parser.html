@@ -6,7 +6,7 @@
 {% if not ollama_running %}
 <div class="panel" style="text-align:center; padding:60px 20px;">
   <i class="fa-solid fa-file-circle-xmark" style="font-size:3rem; color:var(--text-muted); margin-bottom:16px;"></i>
-  <h3 style="color:#fff;">API Key Not Configured</h3>
+  <h3 style="color:var(--text);">API Key Not Configured</h3>
   <p style="color:var(--text-muted); margin:10px 0 20px;">Set your OpenRouter API key to use the document scanner.</p>
   <code style="background:var(--bg); padding:8px 16px; border-radius:8px; color:var(--green);">set VCMS_OPENROUTER_KEY=sk-or-...your-key-here</code>
   <p style="color:var(--text-muted); margin-top:12px; font-size:0.85rem;">Get a free key at <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a></p>
@@ -15,7 +15,7 @@
 
 {% if not parsed_data %}
 <div class="panel">
-  <h3 style="color:#fff; margin:0 0 16px;"><i class="fa-solid fa-cloud-arrow-up" style="color:var(--blue);"></i> Upload Document Image</h3>
+  <h3 style="color:var(--text); margin:0 0 16px;"><i class="fa-solid fa-cloud-arrow-up" style="color:var(--blue);"></i> Upload Document Image</h3>
   <p style="color:var(--text-muted); margin-bottom:16px;">Upload an image of RC, Insurance, PUC, or Fitness certificate. AI will extract vehicle data automatically.</p>
   <form method="POST" enctype="multipart/form-data" class="upload-zone" id="uploadForm">
     <div class="upload-area" id="dropZone" onclick="document.getElementById('fileInput').click()">
@@ -37,18 +37,18 @@
 {% else %}
 
 <div class="panel" style="margin-bottom:18px;">
-  <h3 style="color:#fff; margin:0 0 6px;"><i class="fa-solid fa-circle-check" style="color:var(--green);"></i> Document Scanned Successfully</h3>
+  <h3 style="color:var(--text); margin:0 0 6px;"><i class="fa-solid fa-circle-check" style="color:var(--green);"></i> Document Scanned Successfully</h3>
   <p style="color:var(--text-muted); margin:0;">Review the extracted data below, make corrections if needed, then add the vehicle.</p>
 </div>
 
 {% if existing_vehicle %}
-<div style="background:rgba(234,179,8,0.1); border:1px solid rgba(234,179,8,0.3); border-radius:10px; padding:16px; margin-bottom:18px;">
+<div style="background:var(--warning-bg); border:1px solid var(--yellow); border-radius:10px; padding:16px; margin-bottom:18px;">
   <h4 style="color:var(--yellow); margin:0 0 8px;"><i class="fa-solid fa-triangle-exclamation"></i> Vehicle Already Exists</h4>
   <p style="color:var(--text); margin:0 0 8px;">This vehicle is already in the database. Existing data will be preserved for blank fields — only new values will be updated.</p>
   <div style="display:flex; gap:16px; flex-wrap:wrap; font-size:0.85rem;">
-    <span style="color:var(--text-muted);">Vehicle: <strong style="color:#fff;">{{ existing_vehicle.vehicle_number }}</strong></span>
-    <span style="color:var(--text-muted);">Chassis: <strong style="color:#fff;">{{ existing_vehicle.chassis_number }}</strong></span>
-    <span style="color:var(--text-muted);">Owner: <strong style="color:#fff;">{{ existing_vehicle.owner_name }}</strong></span>
+    <span style="color:var(--text-muted);">Vehicle: <strong style="color:var(--text);">{{ existing_vehicle.vehicle_number }}</strong></span>
+    <span style="color:var(--text-muted);">Chassis: <strong style="color:var(--text);">{{ existing_vehicle.chassis_number }}</strong></span>
+    <span style="color:var(--text-muted);">Owner: <strong style="color:var(--text);">{{ existing_vehicle.owner_name }}</strong></span>
   </div>
   <a href="{{ url_for('view_vehicle', vehicle_id=existing_vehicle.id) }}" style="display:inline-block; margin-top:8px; font-size:0.85rem;">View existing record <i class="fa-solid fa-arrow-up-right-from-square"></i></a>
 </div>
@@ -63,7 +63,7 @@
 
 <form method="POST" action="{{ url_for('ai_parse_add_vehicle') }}">
   <div class="detail-card">
-    <h4 style="color:#fff; margin:0 0 16px;">Extracted Vehicle Information</h4>
+    <h4 style="color:var(--text); margin:0 0 16px;">Extracted Vehicle Information</h4>
     <div class="form-grid">
       <div class="form-group">
         <label>Vehicle Number *</label>
