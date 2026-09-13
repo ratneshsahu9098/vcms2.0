@@ -23,6 +23,6 @@ class Config:
     # Reminder thresholds, in days before expiry
     REMINDER_WINDOWS = [30, 15, 7, 1]
 
-    # Ollama AI settings
-    OLLAMA_BASE_URL = os.environ.get("VCMS_OLLAMA_URL", "http://localhost:11434")
-    OLLAMA_MODEL = os.environ.get("VCMS_OLLAMA_MODEL", "qwen3:8b")
+    # OpenRouter AI settings
+    OPENROUTER_API_KEY = os.environ.get("VCMS_OPENROUTER_KEY", "")
+    OPENROUTER_MODEL = os.environ.get("VCMS_OPENROUTER_MODEL", "nvidia/llama-nemotron-embed-vl-1b-v2:free")

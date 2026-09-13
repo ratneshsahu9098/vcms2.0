@@ -2,23 +2,30 @@ import json
 import requests
 from datetime import date, timedelta
 
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-def get_ollama_url():
+
+def get_api_key():
     from config import Config
-    return Config.OLLAMA_BASE_URL
+    return Config.OPENROUTER_API_KEY
 
 
 def get_model():
     from config import Config
-    return Config.OLLAMA_MODEL
+    return Config.OPENROUTER_MODEL
 
 
-def check_ollama_running():
-    try:
-        r = requests.get(f"{get_ollama_url()}/api/tags", timeout=5)
-        return r.status_code == 200
-    except Exception:
-        return False
+def get_headers():
+    return {
+        "Authorization": f"Bearer {get_api_key()}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "http://localhost:5000",
+        "X-Title": "VCMS Vehicle Compliance",
+    }
+
+
+def check_api_key():
+    return bool(get_api_key().strip())
 
 
 def chat_completion(messages, model=None):
@@ -26,11 +33,11 @@ def chat_completion(messages, model=None):
     payload = {
         "model": model,
         "messages": messages,
-        "stream": False,
+        "temperature": 0.3,
     }
-    r = requests.post(f"{get_ollama_url()}/api/chat", json=payload, timeout=120)
+    r = requests.post(OPENROUTER_URL, json=payload, headers=get_headers(), timeout=120)
     r.raise_for_status()
-    return r.json()["message"]["content"]
+    return r.json()["choices"][0]["message"]["content"]
 
 
 def chat_completion_stream(messages, model=None):
@@ -39,14 +46,22 @@ def chat_completion_stream(messages, model=None):
         "model": model,
         "messages": messages,
         "stream": True,
+        "temperature": 0.3,
     }
-    r = requests.post(f"{get_ollama_url()}/api/chat", json=payload, stream=True, timeout=120)
+    r = requests.post(OPENROUTER_URL, json=payload, headers=get_headers(), stream=True, timeout=120)
     r.raise_for_status()
     for line in r.iter_lines():
         if line:
-            data = json.loads(line)
-            if "message" in data and "content" in data["message"]:
-                yield data["message"]["content"]
+            line = line.decode("utf-8")
+            if line.startswith("data: "):
+                data = line[6:]
+                if data.strip() == "[DONE]":
+                    break
+                chunk = json.loads(data)
+                if "choices" in chunk and chunk["choices"]:
+                    delta = chunk["choices"][0].get("delta", {})
+                    if "content" in delta:
+                        yield delta["content"]
 
 
 # ---------------------------------------------------------------------------

@@ -913,7 +913,7 @@ def register_routes(app):
     @app.route("/ai/chat", methods=["GET", "POST"])
     @login_required
     def ai_chat():
-        if not ai_service.check_ollama_running():
+        if not ai_service.check_api_key():
             flash("Ollama is not running. Please start Ollama and try again.", "error")
             return render_template("ai_chat.html", messages=[], ollama_running=False)
 
@@ -949,7 +949,7 @@ def register_routes(app):
     @app.route("/ai/parse-document", methods=["GET", "POST"])
     @login_required
     def ai_parse_document():
-        if not ai_service.check_ollama_running():
+        if not ai_service.check_api_key():
             flash("Ollama is not running. Please start Ollama and try again.", "error")
             return render_template("ai_document_parser.html", parsed_data=None, ollama_running=False)
 
@@ -1016,7 +1016,7 @@ def register_routes(app):
     @app.route("/ai/insights")
     @login_required
     def ai_insights():
-        if not ai_service.check_ollama_running():
+        if not ai_service.check_api_key():
             flash("Ollama is not running. Please start Ollama and try again.", "error")
             return render_template("ai_insights.html", insights=None, ollama_running=False)
 

@@ -6,10 +6,10 @@
 {% if not ollama_running %}
 <div class="panel" style="text-align:center; padding:60px 20px;">
   <i class="fa-solid fa-robot" style="font-size:3rem; color:var(--text-muted); margin-bottom:16px;"></i>
-  <h3 style="color:#fff;">Ollama is not running</h3>
-  <p style="color:var(--text-muted); margin:10px 0 20px;">Start Ollama to use the AI assistant.</p>
-  <code style="background:var(--bg); padding:8px 16px; border-radius:8px; color:var(--green);">ollama serve</code>
-  <p style="color:var(--text-muted); margin-top:12px; font-size:0.85rem;">Make sure <strong>qwen3:8b</strong> model is pulled: <code>ollama pull qwen3:8b</code></p>
+  <h3 style="color:#fff;">API Key Not Configured</h3>
+  <p style="color:var(--text-muted); margin:10px 0 20px;">Set your OpenRouter API key to use the AI assistant.</p>
+  <code style="background:var(--bg); padding:8px 16px; border-radius:8px; color:var(--green);">set VCMS_OPENROUTER_KEY=sk-or-...your-key-here</code>
+  <p style="color:var(--text-muted); margin-top:12px; font-size:0.85rem;">Get a free key at <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a></p>
 </div>
 {% else %}
 <div class="ai-chat-container">
