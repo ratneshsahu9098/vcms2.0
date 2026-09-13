@@ -54,7 +54,7 @@ def test_api_connection():
     }
     start = time.time()
     try:
-        r = requests.post(OPENROUTER_URL, json=payload, headers=get_headers(), timeout=30)
+        r = requests.post(OPENROUTER_URL, json=payload, headers=get_headers(), timeout=60)
         elapsed = round(time.time() - start, 1)
         if r.status_code == 200:
             reply = r.json()["choices"][0]["message"]["content"].strip()
@@ -68,9 +68,78 @@ def test_api_connection():
     except requests.exceptions.ConnectionError:
         return {"ok": False, "error": "Cannot connect to OpenRouter. Check your internet."}
     except requests.exceptions.Timeout:
-        return {"ok": False, "error": "Request timed out (30s)."}
+        return {"ok": False, "error": "Request timed out (60s)."}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+def test_api_connection_debug():
+    import time
+    api_key = get_api_key()
+    if not api_key:
+        return {"ok": False, "debug": {"error": "No API key configured"}}
+
+    model = get_model()
+    headers = get_headers()
+    masked_key = api_key[:12] + "..." + api_key[-4:] if len(api_key) > 16 else "****"
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": "Say hi in 3 words."}],
+        "temperature": 0.3,
+        "max_tokens": 20,
+    }
+
+    debug = {
+        "request": {
+            "url": OPENROUTER_URL,
+            "method": "POST",
+            "auth": f"Bearer {masked_key}",
+            "model": model,
+            "body": json.dumps(payload, indent=2),
+            "headers": {k: (v if k != "Authorization" else f"Bearer {masked_key}") for k, v in headers.items()},
+        },
+        "response": None,
+        "timing": {},
+    }
+
+    start = time.time()
+    try:
+        t_dns = time.time()
+        r = requests.post(OPENROUTER_URL, json=payload, headers=headers, timeout=60)
+        total = round(time.time() - start, 2)
+
+        resp_body = ""
+        try:
+            resp_body = json.dumps(r.json(), indent=2)
+        except Exception:
+            resp_body = r.text[:1000]
+
+        debug["response"] = {
+            "status_code": r.status_code,
+            "status_text": "OK" if r.status_code == 200 else "Error",
+            "headers": dict(r.headers),
+            "body": resp_body[:2000],
+        }
+        debug["timing"] = {"total_seconds": total}
+
+        if r.status_code == 200:
+            reply = r.json()["choices"][0]["message"]["content"].strip()
+            return {"ok": True, "debug": debug, "reply": reply, "elapsed": total}
+        else:
+            return {"ok": False, "debug": debug, "elapsed": total}
+
+    except requests.exceptions.ConnectionError:
+        debug["timing"]["total_seconds"] = round(time.time() - start, 2)
+        debug["response"] = {"error": "Connection failed — could not reach openrouter.ai"}
+        return {"ok": False, "debug": debug}
+    except requests.exceptions.Timeout:
+        debug["timing"]["total_seconds"] = round(time.time() - start, 2)
+        debug["response"] = {"error": "Request timed out after 60 seconds"}
+        return {"ok": False, "debug": debug}
+    except Exception as e:
+        debug["timing"]["total_seconds"] = round(time.time() - start, 2)
+        debug["response"] = {"error": str(e)}
+        return {"ok": False, "debug": debug}
 
 
 def chat_completion(messages, model=None):

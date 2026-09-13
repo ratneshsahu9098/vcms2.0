@@ -51,11 +51,14 @@
         <small style="color:var(--text-muted);">Browse models at <a href="https://openrouter.ai/models" target="_blank">openrouter.ai/models</a></small>
       </div>
     </div>
-    <div class="form-actions">
+    <div class="form-actions" style="flex-wrap:wrap;">
       <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> Save Settings</button>
-      <button type="button" class="btn btn-outline-secondary" id="testBtn" onclick="testApi()">
+      <button type="button" class="btn btn-outline-secondary" id="testBtn" onclick="testApi(false)">
         <i class="fa-solid fa-plug"></i> Test Connection
       </button>
+      <label style="display:flex; align-items:center; gap:6px; color:var(--text-muted); font-size:0.85rem; cursor:pointer; margin-left:8px;">
+        <input type="checkbox" id="debugToggle" style="accent-color:var(--blue);"> Debug Mode
+      </label>
       {% if ai_settings.openrouter_api_key %}
       <span class="badge-status status-green" style="margin-left:8px;"><i class="fa-solid fa-check-circle"></i> API key configured</span>
       {% else %}
@@ -63,7 +66,9 @@
       {% endif %}
     </div>
   </form>
+
   <div id="testResult" style="display:none; margin-top:16px; padding:14px; border-radius:8px; font-size:0.9rem;"></div>
+  <div id="debugOutput" style="display:none; margin-top:12px;"></div>
 </div>
 {% endblock %}
 
@@ -81,17 +86,22 @@ function toggleKey() {
   }
 }
 
-function testApi() {
+function testApi(forceDebug) {
+  const debug = forceDebug || document.getElementById('debugToggle').checked;
   const btn = document.getElementById('testBtn');
   const result = document.getElementById('testResult');
+  const debugOut = document.getElementById('debugOutput');
   const apiKey = document.getElementById('apiKeyInput').value;
   const model = document.getElementById('modelInput').value;
 
   btn.disabled = true;
   btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Testing...';
   result.style.display = 'none';
+  debugOut.style.display = 'none';
 
-  fetch('{{ url_for("test_api") }}', {
+  const url = debug ? '{{ url_for("test_api_debug") }}' : '{{ url_for("test_api") }}';
+
+  fetch(url, {
     method: 'POST',
     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
     body: 'openrouter_api_key=' + encodeURIComponent(apiKey) + '&openrouter_model=' + encodeURIComponent(model)
@@ -99,16 +109,27 @@ function testApi() {
   .then(r => r.json())
   .then(data => {
     result.style.display = 'block';
+
+    if (debug && data.debug) {
+      showDebugOutput(data);
+    }
+
     if (data.ok) {
       result.style.background = 'rgba(34,197,94,0.1)';
       result.style.border = '1px solid rgba(34,197,94,0.3)';
       result.style.color = 'var(--green)';
-      result.innerHTML = '<i class="fa-solid fa-circle-check"></i> <strong>API is working!</strong> Model: ' + data.model + ' | Response time: ' + data.elapsed + 's | AI says: "' + data.reply + '"';
+      const elapsed = data.elapsed || (data.debug && data.debug.timing && data.debug.timing.total_seconds) || '?';
+      result.innerHTML = '<i class="fa-solid fa-circle-check"></i> <strong>API is working!</strong> Model: ' +
+        (data.debug ? data.debug.request.model : '') + ' | Response time: ' + elapsed + 's | AI says: "' + data.reply + '"';
     } else {
       result.style.background = 'rgba(239,68,68,0.1)';
       result.style.border = '1px solid rgba(239,68,68,0.3)';
       result.style.color = 'var(--red)';
-      result.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> <strong>API test failed:</strong> ' + data.error;
+      let errMsg = data.error || '';
+      if (data.debug && data.debug.response) {
+        errMsg = data.debug.response.error || JSON.stringify(data.debug.response).substring(0, 300);
+      }
+      result.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> <strong>API test failed:</strong> ' + errMsg;
     }
   })
   .catch(err => {
@@ -123,5 +144,69 @@ function testApi() {
     btn.innerHTML = '<i class="fa-solid fa-plug"></i> Test Connection';
   });
 }
+
+function showDebugOutput(data) {
+  const el = document.getElementById('debugOutput');
+  const d = data.debug;
+
+  let html = '<div class="debug-panel">';
+
+  html += '<div class="debug-section">';
+  html += '<div class="debug-heading"><i class="fa-solid fa-arrow-up"></i> Request</div>';
+  html += '<div class="debug-row"><span class="debug-label">URL:</span> <code>' + d.request.url + '</code></div>';
+  html += '<div class="debug-row"><span class="debug-label">Method:</span> <code>' + d.request.method + '</code></div>';
+  html += '<div class="debug-row"><span class="debug-label">Auth:</span> <code>' + d.request.auth + '</code></div>';
+  html += '<div class="debug-row"><span class="debug-label">Model:</span> <code>' + d.request.model + '</code></div>';
+  html += '<div class="debug-row"><span class="debug-label">Body:</span></div>';
+  html += '<pre class="debug-code">' + escapeHtml(d.request.body) + '</pre>';
+  html += '</div>';
+
+  if (d.response) {
+    html += '<div class="debug-section">';
+    html += '<div class="debug-heading"><i class="fa-solid fa-arrow-down"></i> Response';
+    if (d.timing && d.timing.total_seconds) html += ' <span class="debug-time">(' + d.timing.total_seconds + 's)</span>';
+    html += '</div>';
+    if (d.response.status_code) {
+      const statusColor = d.response.status_code === 200 ? 'var(--green)' : 'var(--red)';
+      html += '<div class="debug-row"><span class="debug-label">Status:</span> <code style="color:' + statusColor + ';">' + d.response.status_code + ' ' + d.response.status_text + '</code></div>';
+    }
+    if (d.response.headers) {
+      html += '<div class="debug-row"><span class="debug-label">Headers:</span></div>';
+      html += '<pre class="debug-code">' + escapeHtml(JSON.stringify(d.response.headers, null, 2)) + '</pre>';
+    }
+    if (d.response.body) {
+      html += '<div class="debug-row"><span class="debug-label">Body:</span></div>';
+      html += '<pre class="debug-code">' + escapeHtml(d.response.body) + '</pre>';
+    }
+    if (d.response.error) {
+      html += '<div class="debug-row" style="color:var(--red);"><span class="debug-label">Error:</span> ' + escapeHtml(d.response.error) + '</div>';
+    }
+    html += '</div>';
+  }
+
+  html += '</div>';
+  el.innerHTML = html;
+  el.style.display = 'block';
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
 </script>
+<style>
+  .debug-panel { background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:16px; }
+  .debug-section { margin-bottom:16px; }
+  .debug-section:last-child { margin-bottom:0; }
+  .debug-heading { font-weight:700; color:#fff; font-size:0.9rem; margin-bottom:8px; display:flex; align-items:center; gap:8px; }
+  .debug-time { color:var(--text-muted); font-weight:400; font-size:0.82rem; }
+  .debug-row { margin-bottom:6px; font-size:0.85rem; color:var(--text); }
+  .debug-label { color:var(--text-muted); font-weight:600; min-width:80px; display:inline-block; }
+  .debug-code {
+    background:var(--charcoal); border:1px solid var(--border); border-radius:6px;
+    padding:10px 12px; margin:6px 0; font-size:0.8rem; color:var(--text-muted);
+    overflow-x:auto; white-space:pre-wrap; word-break:break-all; max-height:300px; overflow-y:auto;
+  }
+</style>
 {% endblock %}

@@ -877,6 +877,21 @@ def register_routes(app):
         result = ai_service.test_api_connection()
         return jsonify(result)
 
+    @app.route("/settings/test-api-debug", methods=["POST"])
+    @login_required
+    def test_api_debug():
+        from utils import load_settings, save_settings
+        api_key = request.form.get("openrouter_api_key", "").strip()
+        model = request.form.get("openrouter_model", "").strip()
+        current = load_settings()
+        if api_key is not None:
+            current["openrouter_api_key"] = api_key
+        if model:
+            current["openrouter_model"] = model
+        save_settings(current)
+        result = ai_service.test_api_connection_debug()
+        return jsonify(result)
+
     # ---- Tax Details ----------------------------------------------------------
 
     @app.route("/vehicles/<int:vehicle_id>/tax")
