@@ -11,17 +11,19 @@ from flask import (
     Flask, render_template, request, redirect, url_for, flash,
     session, send_file, jsonify, abort
 )
+from flask_apscheduler import APScheduler
 from werkzeug.security import generate_password_hash, check_password_hash
 import pandas as pd
 
 from config import Config
-from models import db, Vehicle, TaxDetail, ChatSession, ChatMessage
+from models import db, Vehicle, TaxDetail, ChatSession, ChatMessage, ReminderLog
 from utils import (
     parse_date, allowed_file, normalize_import_dataframe,
     create_backup, list_backups, whatsapp_message, whatsapp_expired_reminder, generate_vehicle_qr
 )
 import ai_service
 import google_drive
+import email_service
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,7 @@ logger = logging.getLogger(__name__)
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
+    app.config["SCHEDULER_API_ENABLED"] = True
 
     db.init_app(app)
 
@@ -37,7 +40,23 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+        _migrate_db_columns()
         resequence_sr_nos()
+
+    scheduler = APScheduler()
+    scheduler.init_app(app)
+
+    @scheduler.task("cron", id="daily_email_reminders", hour=app.config.get("EMAIL_REMINDER_HOUR", 9), minute=0)
+    def daily_email_reminders():
+        with app.app_context():
+            from utils import load_settings
+            settings = load_settings()
+            if not settings.get("auto_reminders_enabled", False):
+                return
+            result = email_service.auto_reminder_job()
+            logger.info(f"Auto-reminder job: {result}")
+
+    scheduler.start()
 
     register_routes(app)
     return app
@@ -56,11 +75,40 @@ def login_required(view):
     return wrapped
 
 
+def _migrate_db_columns():
+    """Add columns that may be missing from existing SQLite tables."""
+    inspector = db.inspect(db.engine)
+    migrations = [
+        ("vehicles", "owner_email", "VARCHAR(120)"),
+        ("vehicles", "national_permit_number", "VARCHAR(50)"),
+        ("vehicles", "address", "TEXT"),
+    ]
+    with db.engine.begin() as conn:
+        for table, column, col_type in migrations:
+            existing_cols = [c["name"] for c in inspector.get_columns(table)]
+            if column not in existing_cols:
+                try:
+                    conn.execute(db.text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
+                    logger.info(f"Migration: added {table}.{column}")
+                except Exception as e:
+                    logger.warning(f"Migration skipped {table}.{column}: {e}")
+
+        table_names = inspector.get_table_names()
+        if "reminder_logs" not in table_names:
+            db.create_all()
+            logger.info("Migration: created reminder_logs table")
+
+
 def resequence_sr_nos():
     vehicles = Vehicle.query.order_by(Vehicle.vehicle_number).all()
+    changed = False
     for i, v in enumerate(vehicles, 1):
-        v.sr_no = f"SN{i:03d}"
-    db.session.commit()
+        expected = f"SN{i:03d}"
+        if v.sr_no != expected:
+            v.sr_no = expected
+            changed = True
+    if changed:
+        db.session.commit()
 
 
 EXPORT_COLUMNS = [
@@ -68,6 +116,7 @@ EXPORT_COLUMNS = [
     ("chassis_number", "Chassis Number"),
     ("engine_number", "Engine Number"),
     ("owner_name", "Owner Name"),
+    ("owner_email", "Owner Email"),
     ("mobile_number", "Mobile Number"),
     ("vehicle_type", "Vehicle Type"),
     ("district", "District"),
@@ -104,11 +153,17 @@ def register_routes(app):
         if request.method == "POST":
             username = request.form.get("username", "")
             password = request.form.get("password", "")
+            remember = request.form.get("remember_me") == "on"
             if username == Config.ADMIN_USERNAME and password == Config.ADMIN_PASSWORD:
                 session["logged_in"] = True
                 session["username"] = username
+                if remember:
+                    session.permanent = True
+                    app.permanent_session_lifetime = timedelta(days=30)
                 flash("Welcome back!", "success")
-                next_url = request.args.get("next") or url_for("dashboard")
+                next_url = request.args.get("next", "")
+                if not next_url or not next_url.startswith("/") or next_url.startswith("//"):
+                    next_url = url_for("dashboard")
                 return redirect(next_url)
             flash("Invalid username or password.", "error")
         return render_template("login.html")
@@ -156,7 +211,6 @@ def register_routes(app):
             for label, info in statuses.items():
                 if info["expiry"] == today:
                     expiring_today += 1
-                    break
 
         recent_added = Vehicle.query.order_by(Vehicle.created_at.desc()).limit(5).all()
         recent_updated = Vehicle.query.order_by(Vehicle.updated_at.desc()).limit(5).all()
@@ -283,6 +337,8 @@ def register_routes(app):
                 chassis_number=request.form["chassis_number"].strip().upper(),
                 engine_number=request.form.get("engine_number", "").strip().upper(),
                 owner_name=request.form["owner_name"].strip(),
+                address=request.form.get("address", "").strip(),
+                owner_email=request.form.get("owner_email", "").strip(),
                 mobile_number=request.form["mobile_number"].strip(),
                 vehicle_type=request.form.get("vehicle_type", "").strip(),
                 district=request.form.get("district", "").strip(),
@@ -296,6 +352,7 @@ def register_routes(app):
                 tax_amount=float(request.form.get("tax_amount", 0) or 0),
                 insurance_expiry=parse_date(request.form.get("insurance_expiry")),
                 national_permit_expiry=parse_date(request.form.get("national_permit_expiry")),
+                national_permit_number=request.form.get("national_permit_number", "").strip().upper(),
                 state_permit_expiry=parse_date(request.form.get("state_permit_expiry")),
                 pollution_certificate_number=request.form.get("pollution_certificate_number", "").strip(),
                 insurance_company=request.form.get("insurance_company", "").strip(),
@@ -303,9 +360,14 @@ def register_routes(app):
                 remarks=request.form.get("remarks", "").strip(),
             )
             db.session.add(vehicle)
-            db.session.commit()
-            flash(f"Vehicle {vehicle.vehicle_number} added successfully.", "success")
-            return redirect(url_for("vehicle_list"))
+            try:
+                db.session.commit()
+                flash(f"Vehicle {vehicle.vehicle_number} added successfully.", "success")
+                return redirect(url_for("vehicle_list"))
+            except Exception as e:
+                db.session.rollback()
+                flash(f"Error adding vehicle: {str(e)}", "error")
+                return redirect(url_for("add_vehicle"))
 
         districts = [r[0] for r in db.session.query(Vehicle.district).distinct() if r[0]]
         return render_template("add_vehicle.html", form={}, districts=districts)
@@ -329,6 +391,8 @@ def register_routes(app):
             vehicle.chassis_number = request.form["chassis_number"].strip().upper()
             vehicle.engine_number = request.form.get("engine_number", "").strip().upper()
             vehicle.owner_name = request.form["owner_name"].strip()
+            vehicle.address = request.form.get("address", "").strip()
+            vehicle.owner_email = request.form.get("owner_email", "").strip()
             vehicle.mobile_number = request.form["mobile_number"].strip()
             vehicle.vehicle_type = request.form.get("vehicle_type", "").strip()
             vehicle.district = request.form.get("district", "").strip()
@@ -342,6 +406,7 @@ def register_routes(app):
             vehicle.tax_amount = float(request.form.get("tax_amount", 0) or 0)
             vehicle.insurance_expiry = parse_date(request.form.get("insurance_expiry"))
             vehicle.national_permit_expiry = parse_date(request.form.get("national_permit_expiry"))
+            vehicle.national_permit_number = request.form.get("national_permit_number", "").strip().upper()
             vehicle.state_permit_expiry = parse_date(request.form.get("state_permit_expiry"))
             vehicle.pollution_certificate_number = request.form.get("pollution_certificate_number", "").strip()
             vehicle.insurance_company = request.form.get("insurance_company", "").strip()
@@ -349,9 +414,14 @@ def register_routes(app):
             vehicle.remarks = request.form.get("remarks", "").strip()
             vehicle.updated_at = datetime.utcnow()
 
-            db.session.commit()
-            flash(f"Vehicle {vehicle.vehicle_number} updated successfully.", "success")
-            return redirect(url_for("vehicle_list"))
+            try:
+                db.session.commit()
+                flash(f"Vehicle {vehicle.vehicle_number} updated successfully.", "success")
+                return redirect(url_for("vehicle_list"))
+            except Exception as e:
+                db.session.rollback()
+                flash(f"Error updating vehicle: {str(e)}", "error")
+                return redirect(url_for("edit_vehicle", vehicle_id=vehicle_id))
 
         districts = [r[0] for r in db.session.query(Vehicle.district).distinct() if r[0]]
         return render_template("edit_vehicle.html", vehicle=vehicle, form=vehicle.to_dict(), districts=districts)
@@ -374,10 +444,14 @@ def register_routes(app):
     def delete_vehicle(vehicle_id):
         vehicle = Vehicle.query.get_or_404(vehicle_id)
         number = vehicle.vehicle_number
-        db.session.delete(vehicle)
-        db.session.commit()
-        resequence_sr_nos()
-        flash(f"Vehicle {number} deleted.", "success")
+        try:
+            db.session.delete(vehicle)
+            db.session.commit()
+            resequence_sr_nos()
+            flash(f"Vehicle {number} deleted.", "success")
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Error deleting vehicle: {str(e)}", "error")
         return redirect(url_for("vehicle_list"))
 
     @app.route("/vehicles/<int:vehicle_id>")
@@ -385,7 +459,8 @@ def register_routes(app):
     def view_vehicle(vehicle_id):
         vehicle = Vehicle.query.get_or_404(vehicle_id)
         filtered_ids = session.get('filtered_vehicle_ids', [])
-        if filtered_ids and vehicle_id in filtered_ids:
+        filtered_set = set(filtered_ids) if filtered_ids else set()
+        if filtered_set and vehicle_id in filtered_set:
             idx = filtered_ids.index(vehicle_id)
             prev_id = filtered_ids[idx - 1] if idx > 0 else None
             next_id = filtered_ids[idx + 1] if idx < len(filtered_ids) - 1 else None
@@ -522,6 +597,100 @@ def register_routes(app):
         wa_link = f"https://wa.me/{vehicle.mobile_number}?text={urllib.parse.quote(message)}"
         return redirect(wa_link)
 
+    # ---- Email Reminders ----------------------------------------------------
+
+    @app.route("/vehicles/<int:vehicle_id>/email-reminder", methods=["POST"])
+    @login_required
+    def email_reminder(vehicle_id):
+        vehicle = Vehicle.query.get_or_404(vehicle_id)
+        force = request.form.get("force") == "1"
+        result = email_service.send_reminder(vehicle, force=force)
+        if result.get("error"):
+            flash(f"Failed to send email: {result['error']}", "error")
+        elif result.get("sent"):
+            flash(f"Email reminder sent to {vehicle.owner_email} for: {', '.join(result['sent'])}", "success")
+        else:
+            flash("No documents expiring within 30 days. Nothing to send.", "info")
+        return redirect(url_for("view_vehicle", vehicle_id=vehicle.id))
+
+    @app.route("/vehicles/email-bulk", methods=["POST"])
+    @login_required
+    def email_bulk_reminders():
+        force = request.form.get("force") == "1"
+        result = email_service.send_bulk_reminders(force=force)
+        flash(
+            f"Consolidated reminders: {result['emails_sent']} email(s) sent to {result['total_vehicles']} vehicle(s), {result['failed']} failed.",
+            "success" if result["emails_sent"] else "error",
+        )
+        return redirect(url_for("vehicle_list"))
+
+    @app.route("/vehicles/email-selected", methods=["POST"])
+    @login_required
+    def email_selected_vehicles():
+        ids = request.form.get("vehicle_ids", "")
+        if not ids:
+            flash("No vehicles selected.", "error")
+            return redirect(url_for("vehicle_list"))
+        id_list = [int(x) for x in ids.split(",") if x.strip().isdigit()]
+        if not id_list:
+            flash("No valid vehicle IDs.", "error")
+            return redirect(url_for("vehicle_list"))
+        vehicles = Vehicle.query.filter(Vehicle.id.in_(id_list)).all()
+        result = email_service.send_consolidated_reminders(vehicles, force=True)
+        flash(
+            f"Consolidated reminders: {result['emails_sent']} email(s) sent to {result['total_vehicles']} vehicle(s), {result['failed']} failed.",
+            "success" if result["emails_sent"] else "error",
+        )
+        return redirect(url_for("vehicle_list"))
+
+    @app.route("/vehicles/email-all-details", methods=["POST"])
+    @login_required
+    def email_all_vehicle_details():
+        vehicle_ids_raw = request.form.get("vehicle_ids", "").strip()
+        vehicle_ids = [int(x) for x in vehicle_ids_raw.split(",") if x.strip().isdigit()] if vehicle_ids_raw else None
+        vehicles = Vehicle.query.filter(Vehicle.id.in_(vehicle_ids)).all() if vehicle_ids else Vehicle.query.all()
+
+        by_owner = {}
+        for v in vehicles:
+            if not v.owner_email:
+                continue
+            by_owner.setdefault(v.owner_email, []).append(v.id)
+
+        sent = 0
+        failed = 0
+        skipped = len(vehicles) - sum(len(ids) for ids in by_owner.values())
+        for email, v_ids in by_owner.items():
+            result = email_service.send_all_vehicle_details(email, v_ids)
+            if result.get("ok"):
+                sent += 1
+            else:
+                failed += 1
+        if sent:
+            flash(f"Vehicle details sent: {sent} email(s) delivered, {failed} failed, {skipped} skipped (no email).", "success")
+        else:
+            flash(f"No emails sent. {skipped} vehicles have no owner email set.", "error")
+        return redirect(url_for("vehicle_list"))
+
+    @app.route("/reminders")
+    @login_required
+    def reminder_logs():
+        page = request.args.get("page", 1, type=int)
+        status_filter = request.args.get("status", "").strip()
+        per_page = 50
+        query = ReminderLog.query.order_by(ReminderLog.sent_at.desc())
+        if status_filter in ("sent", "failed"):
+            query = query.filter_by(status=status_filter)
+        logs = query.paginate(page=page, per_page=per_page, error_out=False)
+        return render_template("reminders.html", logs=logs)
+
+    @app.route("/reminders/clear", methods=["POST"])
+    @login_required
+    def clear_reminder_logs():
+        ReminderLog.query.delete()
+        db.session.commit()
+        flash("Reminder logs cleared.", "success")
+        return redirect(url_for("reminder_logs"))
+
     # ---- Excel Import --------------------------------------------------------
 
     @app.route("/import", methods=["GET", "POST"])
@@ -578,6 +747,8 @@ def register_routes(app):
                         chassis_number=chassis,
                         engine_number=str(record.get("engine_number", "")).strip().upper(),
                         owner_name=str(record.get("owner_name", "")).strip(),
+                        address=str(record.get("address", "")).strip(),
+                        owner_email=str(record.get("owner_email", "")).strip(),
                         mobile_number=str(record.get("mobile_number", "")).strip(),
                         vehicle_type=str(record.get("vehicle_type", "")).strip(),
                         district=str(record.get("district", "")).strip(),
@@ -591,6 +762,7 @@ def register_routes(app):
                         tax_amount=float(record.get("tax_amount", 0) or 0),
                         insurance_expiry=parse_date(record.get("insurance_expiry")),
                         national_permit_expiry=parse_date(record.get("national_permit_expiry")),
+                        national_permit_number=str(record.get("national_permit_number", "")).strip().upper(),
                         state_permit_expiry=parse_date(record.get("state_permit_expiry")),
                         pollution_certificate_number=str(record.get("pollution_certificate_number", "")).strip(),
                         insurance_company=str(record.get("insurance_company", "")).strip(),
@@ -631,6 +803,7 @@ def register_routes(app):
                         chassis_number=chassis,
                         engine_number=str(row.get("engine_number", "")).strip().upper(),
                         owner_name=str(row.get("owner_name", "")).strip(),
+                        address=str(row.get("address", "")).strip(),
                         mobile_number=str(row.get("mobile_number", "")).strip(),
                         vehicle_type=str(row.get("vehicle_type", "")).strip(),
                         district=str(row.get("district", "")).strip(),
@@ -644,6 +817,7 @@ def register_routes(app):
                         tax_amount=float(row.get("tax_amount", 0) or 0),
                         insurance_expiry=parse_date(row.get("insurance_expiry")),
                         national_permit_expiry=parse_date(row.get("national_permit_expiry")),
+                        national_permit_number=str(row.get("national_permit_number", "")).strip().upper(),
                         state_permit_expiry=parse_date(row.get("state_permit_expiry")),
                         pollution_certificate_number=str(row.get("pollution_certificate_number", "")).strip(),
                         insurance_company=str(row.get("insurance_company", "")).strip(),
@@ -829,8 +1003,11 @@ def register_routes(app):
             elif action == "restore":
                 rel_path = request.form.get("backup_path")
                 if rel_path:
-                    backup_path = os.path.join(app.config["BACKUP_FOLDER"], rel_path)
-                    if os.path.exists(backup_path):
+                    backup_dir = os.path.realpath(app.config["BACKUP_FOLDER"])
+                    backup_path = os.path.realpath(os.path.join(backup_dir, rel_path))
+                    if not backup_path.startswith(backup_dir + os.sep):
+                        flash("Invalid backup path.", "error")
+                    elif os.path.exists(backup_path):
                         db.session.remove()
                         shutil.copy2(backup_path, db_path)
                         flash(f"Database restored from {os.path.basename(rel_path)}.", "success")
@@ -865,7 +1042,10 @@ def register_routes(app):
     @app.route("/backup/download/<path:rel_path>")
     @login_required
     def download_backup(rel_path):
-        path = os.path.join(app.config["BACKUP_FOLDER"], rel_path)
+        backup_dir = os.path.realpath(app.config["BACKUP_FOLDER"])
+        path = os.path.realpath(os.path.join(backup_dir, rel_path))
+        if not path.startswith(backup_dir + os.sep) and path != backup_dir:
+            abort(403)
         if not os.path.exists(path):
             abort(404)
         return send_file(path, as_attachment=True, download_name=os.path.basename(path))
@@ -974,7 +1154,7 @@ def register_routes(app):
         })
 
     def sync_to_gdrive():
-        from utils import load_settings
+        from utils import load_settings, save_settings
         settings = load_settings()
         if not settings.get("gdrive_auto_sync", True):
             return
@@ -999,7 +1179,7 @@ def register_routes(app):
         if request.method == "POST" and response.status_code < 400:
             gdrive_endpoints = (
                 "add_vehicle", "edit_vehicle", "delete_vehicle", "delete_all_vehicles",
-                "import_data", "restore",
+                "import_excel", "gdrive_restore",
             )
             if request.endpoint in gdrive_endpoints:
                 import threading
@@ -1012,16 +1192,19 @@ def register_routes(app):
     @login_required
     def settings():
         if request.method == "POST":
-            api_key = request.form.get("openrouter_api_key", "").strip()
-            model = request.form.get("openrouter_model", "").strip()
-            gdrive_auto = request.form.get("gdrive_auto_sync") == "on"
             from utils import load_settings, save_settings
             current = load_settings()
-            if api_key is not None:
-                current["openrouter_api_key"] = api_key
-            if model:
-                current["openrouter_model"] = model
-            current["gdrive_auto_sync"] = gdrive_auto
+            if "openrouter_api_key" in request.form:
+                current["openrouter_api_key"] = request.form.get("openrouter_api_key", "").strip()
+                current["openrouter_model"] = request.form.get("openrouter_model", "").strip()
+            current["gdrive_auto_sync"] = request.form.get("gdrive_auto_sync") == "on"
+            if "smtp_server" in request.form:
+                current["smtp_server"] = request.form.get("smtp_server", "smtp.gmail.com").strip()
+                current["smtp_port"] = request.form.get("smtp_port", "587").strip()
+                current["smtp_user"] = request.form.get("smtp_user", "").strip()
+                current["smtp_password"] = request.form.get("smtp_password", "").strip()
+                current["smtp_from"] = request.form.get("smtp_from", "").strip()
+                current["email_reminders_enabled"] = request.form.get("email_reminders_enabled") == "on"
             save_settings(current)
             flash("Settings saved successfully.", "success")
             return redirect(url_for("settings"))
@@ -1060,6 +1243,35 @@ def register_routes(app):
         save_settings(current)
         result = ai_service.test_api_connection_debug()
         return jsonify(result)
+
+    @app.route("/settings/test-email", methods=["POST"])
+    @login_required
+    def test_email():
+        to_email = request.form.get("test_email_to", "").strip()
+        if not to_email:
+            return jsonify({"ok": False, "error": "No email address provided"})
+        result = email_service.send_test_email(to_email)
+        return jsonify(result)
+
+    @app.route("/settings/save-email", methods=["POST"])
+    @login_required
+    def save_email_settings():
+        from utils import load_settings, save_settings
+        current = load_settings()
+        current["smtp_server"] = request.form.get("smtp_server", "smtp.gmail.com").strip()
+        current["smtp_port"] = request.form.get("smtp_port", "587").strip()
+        current["smtp_user"] = request.form.get("smtp_user", "").strip()
+        current["smtp_password"] = request.form.get("smtp_password", "").strip()
+        current["smtp_from"] = request.form.get("smtp_from", "").strip() or request.form.get("smtp_user", "").strip()
+        if "mailgun_api_key" in request.form:
+            current["mailgun_api_key"] = request.form.get("mailgun_api_key", "").strip()
+            current["mailgun_domain"] = request.form.get("mailgun_domain", "").strip()
+            current["mailgun_from"] = request.form.get("mailgun_from", "").strip()
+        current["email_reminders_enabled"] = request.form.get("email_reminders_enabled") == "on"
+        current["auto_reminders_enabled"] = request.form.get("auto_reminders_enabled") == "on"
+        save_settings(current)
+        flash("Email settings saved.", "success")
+        return redirect(url_for("settings"))
 
     # ---- Tax Details ----------------------------------------------------------
 
@@ -1128,7 +1340,8 @@ def register_routes(app):
         field = request.args.get("field", "")
         value = request.args.get("value", "").strip().upper()
         exclude_id = request.args.get("exclude_id", type=int)
-        if not field or not value:
+        allowed_fields = {"vehicle_number", "chassis_number", "engine_number", "owner_name", "mobile_number", "policy_number"}
+        if not field or not value or field not in allowed_fields:
             return jsonify({"exists": False})
         query = Vehicle.query.filter(getattr(Vehicle, field) == value)
         if exclude_id:
@@ -1212,13 +1425,13 @@ def register_routes(app):
     def ai_parse_document():
         if not ai_service.check_api_key():
             flash("AI API key not configured. Set it in Settings.", "error")
-            return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=False)
+            return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=False, existing_vehicle=None, comparison=None)
 
         if request.method == "POST":
             file = request.files.get("document")
             if not file or file.filename == "":
                 flash("Please upload a document image.", "error")
-                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True)
+                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True, existing_vehicle=None, comparison=None)
 
             try:
                 import pytesseract
@@ -1231,19 +1444,20 @@ def register_routes(app):
                 ocr_text = pytesseract.image_to_string(img)
             except Exception as exc:
                 flash(f"OCR failed: {exc}", "error")
-                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True)
+                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True, existing_vehicle=None, comparison=None)
 
             if not ocr_text.strip():
                 flash("No text could be extracted from the image.", "error")
-                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True)
+                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True, existing_vehicle=None, comparison=None)
 
             try:
                 parsed_data = ai_service.parse_document_text(ocr_text)
             except Exception as exc:
                 flash(f"AI parsing failed: {exc}", "error")
-                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True)
+                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True, existing_vehicle=None, comparison=None)
 
             existing_vehicle = None
+            comparison = None
             if parsed_data:
                 vnum = str(parsed_data.get("vehicle_number", "")).strip().upper()
                 chassis = str(parsed_data.get("chassis_number", "")).strip().upper()
@@ -1252,21 +1466,26 @@ def register_routes(app):
                         db.or_(Vehicle.vehicle_number == vnum, Vehicle.chassis_number == chassis)
                     ).first()
 
+                if existing_vehicle:
+                    comparison = ai_service.compare_vehicle_data(parsed_data, existing_vehicle)
+
             return render_template(
                 "ai_document_parser.html",
                 parsed_data=parsed_data,
                 ocr_text=ocr_text,
                 ai_enabled=True,
                 existing_vehicle=existing_vehicle,
+                comparison=comparison,
             )
 
-        return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True, existing_vehicle=None)
+        return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True, existing_vehicle=None, comparison=None)
 
     @app.route("/ai/parse-document/add", methods=["POST"])
     @login_required
     def ai_parse_add_vehicle():
         vnum = request.form.get("vehicle_number", "").strip().upper()
         chassis = request.form.get("chassis_number", "").strip().upper()
+        accepted_fields = request.form.getlist("accepted_fields")
 
         existing = Vehicle.query.filter(
             db.or_(Vehicle.vehicle_number == vnum, Vehicle.chassis_number == chassis)
@@ -1276,34 +1495,51 @@ def register_routes(app):
             updates = {
                 "engine_number": request.form.get("engine_number", "").strip().upper(),
                 "owner_name": request.form.get("owner_name", "").strip(),
+                "address": request.form.get("address", "").strip(),
                 "mobile_number": request.form.get("mobile_number", "").strip(),
+                "owner_email": request.form.get("owner_email", "").strip(),
                 "vehicle_type": request.form.get("vehicle_type", "").strip(),
                 "registration_date": parse_date(request.form.get("registration_date")),
                 "puc_expiry": parse_date(request.form.get("puc_expiry")),
                 "fitness_expiry": parse_date(request.form.get("fitness_expiry")),
                 "permit_expiry": parse_date(request.form.get("permit_expiry")),
+                "national_permit_number": request.form.get("national_permit_number", "").strip().upper(),
                 "insurance_expiry": parse_date(request.form.get("insurance_expiry")),
                 "insurance_company": request.form.get("insurance_company", "").strip(),
                 "policy_number": request.form.get("policy_number", "").strip(),
             }
             updated_fields = []
+            auto_filled = []
+            user_accepted = []
             for field, value in updates.items():
                 if value:
                     old_val = getattr(existing, field)
+                    is_empty = False
                     if field.endswith("_date") or field.endswith("_expiry"):
-                        if old_val is None:
-                            setattr(existing, field, value)
-                            updated_fields.append(field)
+                        is_empty = old_val is None
                     elif isinstance(value, str) and not value:
                         continue
                     else:
-                        if old_val != value:
-                            setattr(existing, field, value)
-                            updated_fields.append(field)
+                        is_empty = not old_val or str(old_val).strip() == ""
+
+                    if is_empty:
+                        setattr(existing, field, value)
+                        updated_fields.append(field)
+                        auto_filled.append(field)
+                    elif old_val != value and field in accepted_fields:
+                        setattr(existing, field, value)
+                        updated_fields.append(field)
+                        user_accepted.append(field)
 
             existing.updated_at = datetime.utcnow()
             db.session.commit()
-            flash(f"Vehicle {existing.vehicle_number} updated with {len(updated_fields)} new fields.", "success")
+            parts = []
+            if auto_filled:
+                parts.append(f"{len(auto_filled)} auto-filled")
+            if user_accepted:
+                parts.append(f"{len(user_accepted)} accepted")
+            summary = " and ".join(parts) if parts else "no changes"
+            flash(f"Vehicle {existing.vehicle_number} updated: {summary}.", "success")
             return redirect(url_for("view_vehicle", vehicle_id=existing.id))
 
         vehicle = Vehicle(
@@ -1311,12 +1547,15 @@ def register_routes(app):
             chassis_number=chassis,
             engine_number=request.form.get("engine_number", "").strip().upper(),
             owner_name=request.form.get("owner_name", "").strip(),
+            address=request.form.get("address", "").strip(),
+            owner_email=request.form.get("owner_email", "").strip(),
             mobile_number=request.form.get("mobile_number", "").strip(),
             vehicle_type=request.form.get("vehicle_type", "").strip(),
             registration_date=parse_date(request.form.get("registration_date")),
             puc_expiry=parse_date(request.form.get("puc_expiry")),
             fitness_expiry=parse_date(request.form.get("fitness_expiry")),
             permit_expiry=parse_date(request.form.get("permit_expiry")),
+            national_permit_number=request.form.get("national_permit_number", "").strip().upper(),
             insurance_expiry=parse_date(request.form.get("insurance_expiry")),
             insurance_company=request.form.get("insurance_company", "").strip(),
             policy_number=request.form.get("policy_number", "").strip(),
@@ -1352,6 +1591,10 @@ def update_vehicle_from_record(vehicle, record):
         vehicle.engine_number = str(record.get("engine_number", "") or vehicle.engine_number or "").strip().upper()
     if "owner_name" in record:
         vehicle.owner_name = str(record.get("owner_name", "") or vehicle.owner_name or "").strip()
+    if "address" in record:
+        vehicle.address = str(record.get("address", "") or vehicle.address or "").strip()
+    if "owner_email" in record:
+        vehicle.owner_email = str(record.get("owner_email", "") or vehicle.owner_email or "").strip()
     if "mobile_number" in record:
         vehicle.mobile_number = str(record.get("mobile_number", "") or vehicle.mobile_number or "").strip()
     if "vehicle_type" in record:
@@ -1396,6 +1639,8 @@ def update_vehicle_from_record(vehicle, record):
         parsed = parse_date(record.get("national_permit_expiry"))
         if parsed:
             vehicle.national_permit_expiry = parsed
+    if "national_permit_number" in record:
+        vehicle.national_permit_number = str(record.get("national_permit_number", "") or vehicle.national_permit_number or "").strip().upper()
     if "state_permit_expiry" in record:
         parsed = parse_date(record.get("state_permit_expiry"))
         if parsed:
@@ -1447,4 +1692,4 @@ def validate_vehicle_form(form, editing_id=None):
 app = create_app()
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=False, host="0.0.0.0", port=5000)

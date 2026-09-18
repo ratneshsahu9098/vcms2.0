@@ -44,7 +44,6 @@
 {% if existing_vehicle %}
 <div style="background:var(--warning-bg); border:1px solid var(--yellow); border-radius:10px; padding:16px; margin-bottom:18px;">
   <h4 style="color:var(--yellow); margin:0 0 8px;"><i class="fa-solid fa-triangle-exclamation"></i> Vehicle Already Exists</h4>
-  <p style="color:var(--text); margin:0 0 8px;">This vehicle is already in the database. Existing data will be preserved for blank fields — only new values will be updated.</p>
   <div style="display:flex; gap:16px; flex-wrap:wrap; font-size:0.85rem;">
     <span style="color:var(--text-muted);">Vehicle: <strong style="color:var(--text);">{{ existing_vehicle.vehicle_number }}</strong></span>
     <span style="color:var(--text-muted);">Chassis: <strong style="color:var(--text);">{{ existing_vehicle.chassis_number }}</strong></span>
@@ -52,6 +51,64 @@
   </div>
   <a href="{{ url_for('view_vehicle', vehicle_id=existing_vehicle.id) }}" style="display:inline-block; margin-top:8px; font-size:0.85rem;">View existing record <i class="fa-solid fa-arrow-up-right-from-square"></i></a>
 </div>
+
+{% if comparison %}
+<div class="panel" style="margin-bottom:18px;">
+  <h4 style="color:var(--text); margin:0 0 12px;"><i class="fa-solid fa-code-compare" style="color:var(--blue);"></i> Field Comparison</h4>
+  <p style="color:var(--text-muted); margin:0 0 16px; font-size:0.85rem;">
+    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--green); vertical-align:middle; margin-right:4px;"></span> Auto-fill (empty in DB)
+    &nbsp;&nbsp;
+    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--yellow); vertical-align:middle; margin-right:4px;"></span> Changed — accept to update
+    &nbsp;&nbsp;
+    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--text-muted); vertical-align:middle; margin-right:4px;"></span> Same — no action
+  </p>
+
+  <div class="compare-table-wrap" style="overflow-x:auto;">
+    <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+      <thead>
+        <tr style="border-bottom:2px solid var(--border);">
+          <th style="text-align:left; padding:8px 10px; color:var(--text);">Field</th>
+          <th style="text-align:left; padding:8px 10px; color:var(--text);">Existing (DB)</th>
+          <th style="text-align:left; padding:8px 10px; color:var(--text);">Scanned</th>
+          <th style="text-align:center; padding:8px 10px; color:var(--text);">Status</th>
+          <th style="text-align:center; padding:8px 10px; color:var(--text);">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in comparison %}
+        <tr style="border-bottom:1px solid var(--border); {% if item.status == 'same' %}opacity:0.55;{% endif %}">
+          <td style="padding:8px 10px; color:var(--text); font-weight:500;">{{ item.label }}</td>
+          <td style="padding:8px 10px; color:var(--text-muted);">{{ item.existing_value }}</td>
+          <td style="padding:8px 10px; color:var(--text);">{{ item.scanned_value }}</td>
+          <td style="padding:8px 10px; text-align:center;">
+            {% if item.status == 'empty' %}
+              <span style="background:rgba(34,197,94,0.15); color:var(--green); padding:3px 10px; border-radius:12px; font-size:0.78rem; font-weight:500;">Auto-fill</span>
+            {% elif item.status == 'changed' %}
+              <span style="background:rgba(234,179,8,0.15); color:var(--yellow); padding:3px 10px; border-radius:12px; font-size:0.78rem; font-weight:500;">Changed</span>
+            {% else %}
+              <span style="background:rgba(156,163,175,0.15); color:var(--text-muted); padding:3px 10px; border-radius:12px; font-size:0.78rem; font-weight:500;">Same</span>
+            {% endif %}
+          </td>
+          <td style="padding:8px 10px; text-align:center;">
+            {% if item.status == 'empty' %}
+              <input type="checkbox" checked disabled style="accent-color:var(--green); cursor:not-allowed;" title="Auto-fill">
+            {% elif item.status == 'changed' %}
+              <input type="checkbox" name="accepted_fields" value="{{ item.field }}" class="accept-check" style="accent-color:var(--yellow); cursor:pointer;" title="Accept this update">
+            {% else %}
+              <span style="color:var(--text-muted); font-size:0.8rem;">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div style="margin-top:12px; font-size:0.82rem; color:var(--text-muted);">
+    <i class="fa-solid fa-info-circle"></i> Empty fields will be auto-filled. Check the boxes above for changed fields you want to update, then click <strong>Apply Updates</strong>.
+  </div>
+</div>
+{% endif %}
 {% endif %}
 
 {% if ocr_text %}
@@ -82,8 +139,16 @@
         <input type="text" name="owner_name" class="form-control" value="{{ parsed_data.owner_name or '' }}">
       </div>
       <div class="form-group">
+        <label>Address</label>
+        <textarea name="address" class="form-control" rows="2" placeholder="Owner address">{{ parsed_data.address or '' }}</textarea>
+      </div>
+      <div class="form-group">
         <label>Mobile Number</label>
         <input type="text" name="mobile_number" class="form-control" value="">
+      </div>
+      <div class="form-group">
+        <label>Owner Email</label>
+        <input type="email" name="owner_email" class="form-control" value="" placeholder="For email reminders">
       </div>
       <div class="form-group">
         <label>Vehicle Type</label>
@@ -106,6 +171,10 @@
         <input type="date" name="permit_expiry" class="form-control" value="{{ parsed_data.permit_expiry or '' }}">
       </div>
       <div class="form-group">
+        <label>NP Auth No (National Permit)</label>
+        <input type="text" name="national_permit_number" class="form-control" value="{{ parsed_data.national_permit_number or '' }}" placeholder="NP Auth No">
+      </div>
+      <div class="form-group">
         <label>Insurance Expiry</label>
         <input type="date" name="insurance_expiry" class="form-control" value="{{ parsed_data.insurance_expiry or '' }}">
       </div>
@@ -120,9 +189,11 @@
     </div>
     <div class="form-actions">
       {% if existing_vehicle %}
-      <button type="submit" class="btn btn-primary"><i class="fa-solid fa-pen-to-square"></i> Update Vehicle</button>
+      <button type="submit" class="btn btn-primary" id="submitBtn">
+        {% if comparison %}<i class="fa-solid fa-check-double"></i> Apply Updates{% else %}<i class="fa-solid fa-pen-to-square"></i> Update Vehicle{% endif %}
+      </button>
       {% else %}
-      <button type="submit" class="btn btn-primary"><i class="fa-solid fa-plus"></i> Add Vehicle</button>
+      <button type="submit" class="btn btn-primary" id="submitBtn"><i class="fa-solid fa-plus"></i> Add Vehicle</button>
       {% endif %}
       <a href="{{ url_for('ai_parse_document') }}" class="btn btn-outline-secondary"><i class="fa-solid fa-arrow-left"></i> Scan Another</a>
     </div>

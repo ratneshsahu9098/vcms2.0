@@ -42,6 +42,7 @@ class Vehicle(db.Model):
     chassis_number = db.Column(db.String(50), unique=True, nullable=False, index=True)
     engine_number = db.Column(db.String(50))
     owner_name = db.Column(db.String(120), nullable=False)
+    owner_email = db.Column(db.String(120))
     mobile_number = db.Column(db.String(15), nullable=False)
     vehicle_type = db.Column(db.String(50))
     district = db.Column(db.String(80))
@@ -57,7 +58,9 @@ class Vehicle(db.Model):
     tax_amount = db.Column(db.Float, default=0)
     insurance_expiry = db.Column(db.Date)
     national_permit_expiry = db.Column(db.Date)
+    national_permit_number = db.Column(db.String(50))
     state_permit_expiry = db.Column(db.Date)
+    address = db.Column(db.Text)
 
     pollution_certificate_number = db.Column(db.String(50))
     insurance_company = db.Column(db.String(120))
@@ -110,7 +113,7 @@ class Vehicle(db.Model):
         for p in priority:
             if p in statuses:
                 return p
-        return "status-green"
+        return "status-gray"
 
     def to_dict(self):
         return {
@@ -120,6 +123,7 @@ class Vehicle(db.Model):
             "chassis_number": self.chassis_number,
             "engine_number": self.engine_number,
             "owner_name": self.owner_name,
+            "owner_email": self.owner_email or "",
             "mobile_number": self.mobile_number,
             "vehicle_type": self.vehicle_type,
             "district": self.district,
@@ -133,7 +137,9 @@ class Vehicle(db.Model):
             "tax_amount": self.tax_amount or 0,
             "insurance_expiry": self.insurance_expiry.isoformat() if self.insurance_expiry else "",
             "national_permit_expiry": self.national_permit_expiry.isoformat() if self.national_permit_expiry else "",
+            "national_permit_number": self.national_permit_number or "",
             "state_permit_expiry": self.state_permit_expiry.isoformat() if self.state_permit_expiry else "",
+            "address": self.address or "",
             "pollution_certificate_number": self.pollution_certificate_number or "",
             "insurance_company": self.insurance_company or "",
             "policy_number": self.policy_number or "",
@@ -171,3 +177,17 @@ class ChatMessage(db.Model):
     role = db.Column(db.String(20), nullable=False)
     content = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class ReminderLog(db.Model):
+    __tablename__ = "reminder_logs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    vehicle_id = db.Column(db.Integer, db.ForeignKey("vehicles.id"), nullable=False)
+    document_type = db.Column(db.String(30), nullable=False)
+    recipient_email = db.Column(db.String(120), nullable=False)
+    status = db.Column(db.String(20), default="sent")
+    error_message = db.Column(db.Text)
+    sent_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    vehicle = db.relationship("Vehicle", backref=db.backref("reminder_logs", lazy="dynamic"))

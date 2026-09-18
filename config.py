@@ -32,3 +32,9 @@ class Config:
 
     # Google Drive settings
     GDRIVE_ENABLED = os.environ.get("VCMS_GDRIVE_ENABLED", "false").lower() == "true"
+
+    # Email reminder settings
+    SMTP_SERVER = os.environ.get("VCMS_SMTP_SERVER", "smtp.gmail.com")
+    SMTP_PORT = int(os.environ.get("VCMS_SMTP_PORT", "587"))
+    EMAIL_REMINDERS_ENABLED = os.environ.get("VCMS_EMAIL_REMINDERS_ENABLED", "false").lower() == "true"
+    EMAIL_REMINDER_HOUR = int(os.environ.get("VCMS_EMAIL_REMINDER_HOUR", "9"))

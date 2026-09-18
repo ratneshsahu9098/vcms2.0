@@ -57,6 +57,22 @@
   <button type="button" id="btnPrintQR" class="btn btn-outline-info" disabled>
     <i class="fa-solid fa-qrcode"></i> Print QR (<span id="selectedQRCount">0</span>)
   </button>
+  <button type="button" id="btnEmailSelected" class="btn btn-outline-info" disabled>
+    <i class="fa-solid fa-envelope"></i> Email Selected (<span id="selectedEmailCount">0</span>)
+  </button>
+  <form method="POST" action="{{ url_for('email_bulk_reminders') }}" class="inline-form" style="display:inline;">
+    <button type="submit" class="btn btn-outline-info"><i class="fa-solid fa-envelope"></i> Email All Expiring</button>
+  </form>
+  <form method="POST" action="{{ url_for('email_all_vehicle_details') }}" id="sendAllForm" style="display:inline;">
+    <input type="hidden" name="vehicle_ids" id="sendAllIds">
+    <input type="hidden" name="email_to" value="">
+    <button type="button" id="btnShowSendAll" class="btn btn-outline-success" onclick="if(confirm('Send all vehicle details to each owner\'s email?')) this.closest('form').submit();">
+      <i class="fa-solid fa-paper-plane"></i> Send All Details
+    </button>
+  </form>
+  <form id="emailSelectedForm" method="POST" action="{{ url_for('email_selected_vehicles') }}" class="inline-form" style="display:none;">
+    <input type="hidden" name="vehicle_ids" id="emailSelectedIds">
+  </form>
   <form method="POST" action="{{ url_for('delete_all_vehicles') }}"
         onsubmit="return confirm('Delete ALL vehicles permanently? This cannot be undone.');" class="inline-form">
     <button type="submit" class="btn btn-outline-danger"><i class="fa-solid fa-trash"></i> Delete All</button>
@@ -135,6 +151,11 @@
         <a href="{{ url_for('edit_vehicle', vehicle_id=v.id) }}" title="Edit"><i class="fa-solid fa-pen"></i></a>
         <a href="{{ url_for('whatsapp_expired', vehicle_id=v.id) }}" target="_blank" title="Send Expired Documents Reminder via WhatsApp"><i class="fa-brands fa-whatsapp" style="color:#25d366;"></i></a>
         <a href="{{ url_for('whatsapp_reminder', vehicle_id=v.id, document_label='all') }}" target="_blank" title="Send All Details via WhatsApp"><i class="fa-brands fa-whatsapp"></i></a>
+        {% if v.owner_email %}
+        <form method="POST" action="{{ url_for('email_reminder', vehicle_id=v.id) }}" class="inline-form" style="display:inline;">
+          <button type="submit" title="Send Email Reminder"><i class="fa-solid fa-envelope" style="color:#3b82f6;"></i></button>
+        </form>
+        {% endif %}
         <a href="tel:{{ v.mobile_number }}" title="Call"><i class="fa-solid fa-phone"></i></a>
         <form method="POST" action="{{ url_for('delete_vehicle', vehicle_id=v.id) }}"
               onsubmit="return confirm('Delete vehicle {{ v.vehicle_number }}? This cannot be undone.');" class="inline-form">
@@ -158,13 +179,19 @@
   const countSpan = document.getElementById('selectedCount');
   const btnQR = document.getElementById('btnPrintQR');
   const qrCountSpan = document.getElementById('selectedQRCount');
+  const btnEmail = document.getElementById('btnEmailSelected');
+  const emailCountSpan = document.getElementById('selectedEmailCount');
+  const emailForm = document.getElementById('emailSelectedForm');
+  const emailIdsInput = document.getElementById('emailSelectedIds');
 
   function updateCount() {
     const checked = document.querySelectorAll('.vehicle-check:checked').length;
     countSpan.textContent = checked;
     qrCountSpan.textContent = checked;
+    emailCountSpan.textContent = checked;
     btnPrint.disabled = checked === 0;
     btnQR.disabled = checked === 0;
+    btnEmail.disabled = checked === 0;
   }
 
   selectAll.addEventListener('change', function() {
@@ -192,6 +219,17 @@
     document.querySelectorAll('.vehicle-check:checked').forEach(cb => ids.push(cb.dataset.id));
     if (ids.length > 0) {
       window.open('{{ url_for("print_qr") }}?ids=' + ids.join(','), '_blank');
+    }
+  });
+
+  btnEmail.addEventListener('click', function() {
+    const ids = [];
+    document.querySelectorAll('.vehicle-check:checked').forEach(cb => ids.push(cb.dataset.id));
+    if (ids.length > 0) {
+      emailIdsInput.value = ids.join(',');
+      if (confirm('Send email reminders to ' + ids.length + ' selected vehicle(s)?')) {
+        emailForm.submit();
+      }
     }
   });
 })();

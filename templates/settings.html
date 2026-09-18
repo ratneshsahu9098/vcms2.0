@@ -20,6 +20,14 @@
       <span>Database</span>
       <span class="text-muted">{{ config.SQLALCHEMY_DATABASE_URI }}</span>
     </div>
+    <div class="settings-row">
+      <span><i class="fa-solid fa-cloud-arrow-up" style="color:var(--green); margin-right:6px;"></i>Auto-Save Settings</span>
+      <span class="badge-status status-green"><i class="fa-solid fa-check"></i> Enabled</span>
+    </div>
+    <div class="settings-row">
+      <span><i class="fa-solid fa-cookie-bite" style="color:var(--yellow); margin-right:6px;"></i>Remember Login</span>
+      <span class="badge-status status-green"><i class="fa-solid fa-check"></i> 30 days</span>
+    </div>
   </div>
 </div>
 
@@ -80,6 +88,92 @@
 
   <div id="testResult" style="display:none; margin-top:16px; padding:14px; border-radius:8px; font-size:0.9rem;"></div>
   <div id="debugOutput" style="display:none; margin-top:12px;"></div>
+</div>
+
+<div class="panel" style="margin-top:20px;">
+  <h3 class="panel-title"><i class="fa-solid fa-envelope"></i> Email Reminders (Gmail SMTP)</h3>
+  <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;">
+    Send automatic expiry reminders via email. Free with Gmail (up to 500 emails/day).
+    Get an <a href="https://myaccount.google.com/apppasswords" target="_blank">App Password</a> for Gmail.
+  </p>
+  <form method="POST" action="{{ url_for('save_email_settings') }}">
+    <div class="form-grid">
+      <div class="form-group">
+        <label>SMTP Server</label>
+        <input type="text" name="smtp_server" class="form-control" value="{{ ai_settings.smtp_server or 'smtp.gmail.com' }}">
+      </div>
+      <div class="form-group">
+        <label>Port</label>
+        <input type="text" name="smtp_port" class="form-control" value="{{ ai_settings.smtp_port or '587' }}">
+      </div>
+      <div class="form-group form-group-full">
+        <label>Gmail Address</label>
+        <input type="email" name="smtp_user" class="form-control" value="{{ ai_settings.smtp_user or '' }}" placeholder="your-email@gmail.com">
+      </div>
+      <div class="form-group form-group-full">
+        <label>App Password (16 characters)</label>
+        <input type="password" name="smtp_password" class="form-control" value="{{ ai_settings.smtp_password or '' }}" placeholder="xxxx xxxx xxxx xxxx">
+      </div>
+      <div class="form-group form-group-full">
+        <label>From Address (optional, defaults to Gmail address)</label>
+        <input type="email" name="smtp_from" class="form-control" value="{{ ai_settings.smtp_from or '' }}" placeholder="your-email@gmail.com">
+      </div>
+    </div>
+    <div class="form-actions" style="flex-wrap:wrap;">
+      <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> Save Email Settings</button>
+      <label style="display:flex; align-items:center; gap:6px; color:var(--text); font-size:0.9rem; cursor:pointer; margin-left:8px;">
+        <input type="checkbox" name="auto_reminders_enabled" {% if ai_settings.get('auto_reminders_enabled') %}checked{% endif %}
+               style="accent-color:var(--blue);" onchange="this.form.submit();">
+        Auto-Send Email Reminders
+      </label>
+      <span style="color:var(--text-muted); font-size:0.85rem; margin-left:8px;">
+        (daily at {{ config.EMAIL_REMINDER_HOUR or 9 }}:00 — sends for 7 days, 3 days, tomorrow &amp; today)
+      </span>
+    </div>
+  </form>
+
+  <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+    <div style="display:flex; gap:8px; align-items:center;">
+      <input type="email" id="testEmailTo" class="form-control" placeholder="Test email to..." style="width:260px;">
+      <button type="button" class="btn btn-outline-secondary" onclick="testEmail()">
+        <i class="fa-solid fa-paper-plane"></i> Send Test
+      </button>
+    </div>
+    <a href="{{ url_for('reminder_logs') }}" class="btn btn-outline-secondary"><i class="fa-solid fa-clock-rotate-left"></i> View Logs</a>
+    <div id="emailTestResult" style="font-size:0.85rem;"></div>
+  </div>
+</div>
+
+<div class="panel" style="margin-top:20px;">
+  <h3 class="panel-title"><i class="fa-solid fa-envelope-open-text"></i> Mailgun Email (Optional)</h3>
+  <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;">
+    Use Mailgun as an email provider instead of SMTP. Mailgun tries first; if it fails, SMTP is used as fallback.
+    Free tier: 5,000 emails/month. Get API key at <a href="https://app.mailgun.com/app/sending/api-keys" target="_blank">mailgun.com</a>.
+  </p>
+  <form method="POST" action="{{ url_for('save_email_settings') }}">
+    <div class="form-grid">
+      <div class="form-group form-group-full">
+        <label>API Key</label>
+        <input type="password" name="mailgun_api_key" class="form-control" value="{{ ai_settings.mailgun_api_key or '' }}" placeholder="key-xxxxxxxxxxxxxxxxxxxx">
+      </div>
+      <div class="form-group form-group-full">
+        <label>Domain</label>
+        <input type="text" name="mailgun_domain" class="form-control" value="{{ ai_settings.mailgun_domain or '' }}" placeholder="sandbox80edc544a4d145efa4ad7623e594b127.mailgun.org">
+      </div>
+      <div class="form-group form-group-full">
+        <label>From Address (optional)</label>
+        <input type="email" name="mailgun_from" class="form-control" value="{{ ai_settings.mailgun_from or '' }}" placeholder="VCMS <noreply@your-domain.com>">
+      </div>
+    </div>
+    <div class="form-actions" style="flex-wrap:wrap;">
+      <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> Save Mailgun Settings</button>
+      {% if ai_settings.mailgun_api_key and ai_settings.mailgun_domain %}
+      <span class="badge badge-green" style="margin-left:8px;"><i class="fa-solid fa-check-circle"></i> Mailgun configured</span>
+      {% else %}
+      <span class="badge badge-gray" style="margin-left:8px;"><i class="fa-solid fa-circle-minus"></i> Not configured</span>
+      {% endif %}
+    </div>
+  </form>
 </div>
 
 <div class="panel" style="margin-top:20px;">
@@ -289,6 +383,29 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+function testEmail() {
+  const email = document.getElementById('testEmailTo').value;
+  const result = document.getElementById('emailTestResult');
+  if (!email) { result.innerHTML = '<span style="color:var(--red);">Enter an email address</span>'; return; }
+  result.innerHTML = '<span style="color:var(--text-muted);">Sending...</span>';
+  fetch('{{ url_for("test_email") }}', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'test_email_to=' + encodeURIComponent(email)
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      result.innerHTML = '<span style="color:var(--green);"><i class="fa-solid fa-check"></i> Test email sent!</span>';
+    } else {
+      result.innerHTML = '<span style="color:var(--red);"><i class="fa-solid fa-xmark"></i> ' + (data.error || 'Failed') + '</span>';
+    }
+  })
+  .catch(err => {
+    result.innerHTML = '<span style="color:var(--red);">Error: ' + err + '</span>';
+  });
 }
 </script>
 <style>

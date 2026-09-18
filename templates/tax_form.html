@@ -9,7 +9,7 @@
       <label>Tax Mode</label>
       <select name="tax_mode" class="form-select">
         <option value="">Select mode</option>
-        {% for m in ['Quarterly (Q)', 'Half-Yearly (HY)', 'Yearly (Y)', 'One-Time (LT)', 'Lifetime (LTT)'] %}
+        {% for m in ['Monthly (M)', 'Quarterly (Q)', 'Half-Yearly (HY)', 'Yearly (Y)', 'One-Time (LT)', 'Lifetime (LTT)'] %}
         <option value="{{ m }}" {{ 'selected' if tax and tax.tax_mode == m }}>{{ m }}</option>
         {% endfor %}
       </select>

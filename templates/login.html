@@ -28,6 +28,10 @@
         <label class="form-label">Password</label>
         <input type="password" name="password" class="form-control" required>
       </div>
+      <div class="mb-3" style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" name="remember_me" id="rememberMe" style="accent-color:var(--blue); width:16px; height:16px;">
+        <label for="rememberMe" style="color:var(--text-muted); font-size:0.88rem; cursor:pointer; margin:0;">Remember me on this browser</label>
+      </div>
       <button type="submit" class="btn btn-primary w-100">Sign In</button>
     </form>
     <p class="auth-hint">Default: admin / admin123 (change in config.py)</p>

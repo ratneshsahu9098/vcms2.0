@@ -34,6 +34,12 @@
       <a href="{{ url_for('vehicle_qr_dates', vehicle_id=vehicle.id) }}" target="_blank" class="btn btn-outline-secondary"><i class="fa-solid fa-qrcode"></i> QR & Dates</a>
       <a href="{{ url_for('whatsapp_expired', vehicle_id=vehicle.id) }}" target="_blank" class="btn btn-outline-success"><i class="fa-brands fa-whatsapp"></i> Send Expiry Reminder</a>
       <a href="{{ url_for('whatsapp_reminder', vehicle_id=vehicle.id, document_label='all') }}" target="_blank" class="btn btn-outline-success"><i class="fa-brands fa-whatsapp"></i> Send All Details</a>
+      {% if vehicle.owner_email %}
+      <form method="POST" action="{{ url_for('email_reminder', vehicle_id=vehicle.id) }}" class="inline-form" style="display:inline;">
+        <button type="submit" class="btn btn-outline-info"><i class="fa-solid fa-envelope"></i> Send Email Reminder</button>
+      </form>
+      {% endif %}
+      <button type="button" id="btnSendAllDetails" class="btn btn-outline-success" onclick="document.getElementById('sendAllDetailsForm').submit();"><i class="fa-solid fa-paper-plane"></i> Send All Details</button>
       <a href="https://wa.me/{{ vehicle.mobile_number }}" target="_blank" class="btn btn-outline-success"><i class="fa-brands fa-whatsapp"></i> WhatsApp</a>
       <a href="tel:{{ vehicle.mobile_number }}" class="btn btn-outline-secondary"><i class="fa-solid fa-phone"></i> Call</a>
     </div>
@@ -73,6 +79,14 @@
       <a href="{{ url_for('whatsapp_reminder', vehicle_id=vehicle.id, document_label=label) }}" class="doc-remind-link">
         <i class="fa-brands fa-whatsapp"></i> Send Reminder
       </a>
+      {% if vehicle.owner_email %}
+      <form method="POST" action="{{ url_for('email_reminder', vehicle_id=vehicle.id) }}" class="inline-form">
+        <input type="hidden" name="force" value="1">
+        <button type="submit" class="doc-remind-link doc-email-link">
+          <i class="fa-solid fa-envelope"></i> Send Email
+        </button>
+      </form>
+      {% endif %}
       {% endif %}
     </div>
     {% endfor %}
@@ -88,4 +102,9 @@
     Last updated {{ vehicle.updated_at.strftime('%d %b %Y, %I:%M %p') }}
   </p>
 </div>
+
+<form id="sendAllDetailsForm" method="POST" action="{{ url_for('email_all_vehicle_details') }}" style="display:none;">
+  <input type="hidden" name="vehicle_ids" value="{{ vehicle.id }}">
+  <input type="hidden" name="email_to" value="{{ vehicle.owner_email or '' }}">
+</form>
 {% endblock %}

@@ -56,6 +56,9 @@
         <i class="fa-solid fa-brain"></i> AI Insights
       </a>
       <div class="sidebar-divider"></div>
+      <a href="{{ url_for('reminder_logs') }}" class="{{ 'active' if request.endpoint == 'reminder_logs' }}">
+        <i class="fa-solid fa-envelope-circle-check"></i> Reminders
+      </a>
       <a href="{{ url_for('backup') }}" class="{{ 'active' if request.endpoint == 'backup' }}">
         <i class="fa-solid fa-database"></i> Backup
       </a>
@@ -84,7 +87,7 @@
           <div class="flash-stack">
           {% for category, message in messages %}
             <div class="flash flash-{{ category }}">
-              <i class="fa-solid {{ 'fa-circle-check' if category == 'success' else 'fa-triangle-exclamation' }}"></i>
+              <i class="fa-solid {{ 'fa-circle-check' if category == 'success' else 'fa-circle-xmark' if category == 'error' else 'fa-circle-info' if category == 'info' else 'fa-triangle-exclamation' }}"></i>
               {{ message }}
             </div>
           {% endfor %}

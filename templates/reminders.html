@@ -1,0 +1,350 @@
+{% extends "layout.html" %}
+{% block title %}Reminder Logs{% endblock %}
+{% block page_title %}Email Reminder Logs{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h2 class="page-title"><i class="fa-solid fa-envelope-circle-check"></i> Email Reminder Logs</h2>
+    <p style="color:var(--text-muted); font-size:0.85rem;">History of all email reminders sent for document expiry alerts.</p>
+  </div>
+  <div style="display:flex; gap:8px;">
+    <form method="POST" action="{{ url_for('email_bulk_reminders') }}">
+      <button type="submit" class="btn btn-primary"><i class="fa-solid fa-paper-plane"></i> Send Expiring Now</button>
+    </form>
+    {% if logs.items %}
+    <form method="POST" action="{{ url_for('clear_reminder_logs') }}"
+          onsubmit="return confirm('Clear all reminder logs?');">
+      <button type="submit" class="btn btn-outline-danger"><i class="fa-solid fa-trash"></i> Clear Logs</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{% set total_sent = logs.items|selectattr('status', 'equalto', 'sent')|list|length if logs.items else 0 %}
+{% set total_failed = logs.items|selectattr('status', 'equalto', 'failed')|list|length if logs.items else 0 %}
+{% set total_all = logs.total if logs.total else 0 %}
+
+<div class="reminder-stats">
+  <div class="reminder-stat-card">
+    <div class="stat-icon" style="background:rgba(59,130,246,0.12); color:var(--blue);">
+      <i class="fa-solid fa-envelope"></i>
+    </div>
+    <div class="stat-info">
+      <span class="stat-value">{{ total_all }}</span>
+      <span class="stat-label">Total Logs</span>
+    </div>
+  </div>
+  <div class="reminder-stat-card">
+    <div class="stat-icon" style="background:var(--success-bg); color:var(--green);">
+      <i class="fa-solid fa-circle-check"></i>
+    </div>
+    <div class="stat-info">
+      <span class="stat-value" style="color:var(--green);">{{ total_sent }}</span>
+      <span class="stat-label">Sent</span>
+    </div>
+  </div>
+  <div class="reminder-stat-card">
+    <div class="stat-icon" style="background:var(--danger-bg); color:var(--red);">
+      <i class="fa-solid fa-circle-xmark"></i>
+    </div>
+    <div class="stat-info">
+      <span class="stat-value" style="color:var(--red);">{{ total_failed }}</span>
+      <span class="stat-label">Failed</span>
+    </div>
+  </div>
+  <div class="reminder-stat-card">
+    <div class="stat-icon" style="background:rgba(139,143,156,0.12); color:var(--text-muted);">
+      <i class="fa-solid fa-clock-rotate-left"></i>
+    </div>
+    <div class="stat-info">
+      <span class="stat-value">{{ logs.items[0].sent_at.strftime('%d %b') if logs.items else '—' }}</span>
+      <span class="stat-label">Last Sent</span>
+    </div>
+  </div>
+</div>
+
+{% if logs.items %}
+<div class="reminder-filters">
+  <span class="filter-label"><i class="fa-solid fa-filter"></i> Filter:</span>
+  <a href="{{ url_for('reminder_logs') }}" class="filter-chip {% if not request.args.get('status') %}active{% endif %}">All</a>
+  <a href="{{ url_for('reminder_logs') }}?status=sent" class="filter-chip {% if request.args.get('status') == 'sent' %}active{% endif %}">
+    <i class="fa-solid fa-check"></i> Sent
+  </a>
+  <a href="{{ url_for('reminder_logs') }}?status=failed" class="filter-chip {% if request.args.get('status') == 'failed' %}active{% endif %}">
+    <i class="fa-solid fa-xmark"></i> Failed
+  </a>
+</div>
+{% endif %}
+
+<div class="reminder-timeline">
+  {% for log in logs.items %}
+  <div class="reminder-entry {% if log.status == 'failed' %}reminder-failed{% endif %}">
+    <div class="reminder-entry-dot {% if log.status == 'sent' %}dot-green{% else %}dot-red{% endif %}">
+      {% if log.status == 'sent' %}
+        <i class="fa-solid fa-paper-plane"></i>
+      {% else %}
+        <i class="fa-solid fa-triangle-exclamation"></i>
+      {% endif %}
+    </div>
+    <div class="reminder-entry-card">
+      <div class="reminder-entry-header">
+        <div class="reminder-entry-meta">
+          <a href="{{ url_for('view_vehicle', vehicle_id=log.vehicle.id) }}" class="reminder-vehicle-link">
+            <i class="fa-solid fa-truck"></i> {{ log.vehicle.vehicle_number }}
+          </a>
+          <span class="reminder-owner">{{ log.vehicle.owner_name }}</span>
+        </div>
+        <div class="reminder-entry-time">
+          <i class="fa-regular fa-clock"></i> {{ log.sent_at.strftime('%d %b %Y, %I:%M %p') }}
+        </div>
+      </div>
+      <div class="reminder-entry-body">
+        <div class="reminder-detail-row">
+          <span class="reminder-detail-label">Document</span>
+          <span class="badge badge-green">{{ log.document_type }}</span>
+        </div>
+        <div class="reminder-detail-row">
+          <span class="reminder-detail-label">Recipient</span>
+          <span class="reminder-email"><i class="fa-solid fa-at"></i> {{ log.recipient_email }}</span>
+        </div>
+        <div class="reminder-detail-row">
+          <span class="reminder-detail-label">Status</span>
+          {% if log.status == 'sent' %}
+            <span class="badge badge-green"><i class="fa-solid fa-check"></i> Sent</span>
+          {% elif log.status == 'failed' %}
+            <span class="badge badge-red" title="{{ log.error_message or '' }}"><i class="fa-solid fa-xmark"></i> Failed</span>
+          {% else %}
+            <span class="badge badge-yellow">{{ log.status }}</span>
+          {% endif %}
+        </div>
+        {% if log.error_message and log.status == 'failed' %}
+        <div class="reminder-error">
+          <i class="fa-solid fa-circle-info"></i> {{ log.error_message }}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% if logs.pages > 1 %}
+<div class="pagination-bar">
+  <a href="{{ url_for('reminder_logs', page=logs.prev_num) }}" class="btn btn-outline-secondary btn-sm {% if not logs.has_prev %}disabled{% endif %}">
+    <i class="fa-solid fa-chevron-left"></i> Previous
+  </a>
+  <div class="page-numbers">
+    {% for p in range(1, logs.pages + 1) %}
+      {% if p == logs.page %}
+        <span class="page-num active">{{ p }}</span>
+      {% elif p <= 3 or p > logs.pages - 3 or (p >= logs.page - 1 and p <= logs.page + 1) %}
+        <a href="{{ url_for('reminder_logs', page=p) }}" class="page-num">{{ p }}</a>
+      {% elif p == 4 or p == logs.pages - 3 %}
+        <span class="page-dots">...</span>
+      {% endif %}
+    {% endfor %}
+  </div>
+  <a href="{{ url_for('reminder_logs', page=logs.next_num) }}" class="btn btn-outline-secondary btn-sm {% if not logs.has_next %}disabled{% endif %}">
+    Next <i class="fa-solid fa-chevron-right"></i>
+  </a>
+</div>
+{% endif %}
+
+{% if not logs.items %}
+<div class="empty-state">
+  <div class="empty-state-icon">
+    <i class="fa-solid fa-envelope-open"></i>
+  </div>
+  <h3>No Reminder Logs Yet</h3>
+  <p>Email reminders will appear here once you send them. You can send reminders manually or set up daily automatic reminders.</p>
+  <div class="empty-state-actions">
+    <a href="{{ url_for('settings') }}" class="btn btn-primary"><i class="fa-solid fa-gear"></i> Configure Email</a>
+    <a href="{{ url_for('vehicle_list') }}" class="btn btn-outline-secondary"><i class="fa-solid fa-car"></i> View Vehicles</a>
+  </div>
+</div>
+{% endif %}
+
+<style>
+  .reminder-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+  .reminder-stat-card {
+    background: var(--charcoal);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    transition: border-color 0.2s;
+  }
+  .reminder-stat-card:hover { border-color: var(--blue); }
+  .stat-icon {
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+  }
+  .stat-info { display: flex; flex-direction: column; }
+  .stat-value { font-size: 1.4rem; font-weight: 700; color: var(--text); line-height: 1.2; }
+  .stat-label { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
+
+  .reminder-filters {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 18px; flex-wrap: wrap;
+  }
+  .filter-label { font-size: 0.85rem; color: var(--text-muted); font-weight: 500; }
+  .filter-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 14px; border-radius: 20px;
+    font-size: 0.82rem; font-weight: 500;
+    background: var(--charcoal); border: 1px solid var(--border);
+    color: var(--text-muted); text-decoration: none;
+    transition: all 0.2s;
+  }
+  .filter-chip:hover { border-color: var(--blue); color: var(--text); }
+  .filter-chip.active {
+    background: rgba(59,130,246,0.15); border-color: var(--blue);
+    color: var(--blue);
+  }
+
+  .reminder-timeline { display: flex; flex-direction: column; gap: 0; }
+  .reminder-entry {
+    display: flex; gap: 16px;
+    padding-left: 20px;
+    position: relative;
+  }
+  .reminder-entry::before {
+    content: '';
+    position: absolute;
+    left: 33px; top: 40px; bottom: 0;
+    width: 2px;
+    background: var(--border);
+  }
+  .reminder-entry:last-child::before { display: none; }
+
+  .reminder-entry-dot {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.7rem;
+    flex-shrink: 0;
+    margin-top: 16px;
+    z-index: 1;
+  }
+  .dot-green { background: var(--success-bg); color: var(--green); border: 2px solid var(--green); }
+  .dot-red { background: var(--danger-bg); color: var(--red); border: 2px solid var(--red); }
+
+  .reminder-entry-card {
+    flex: 1;
+    background: var(--charcoal);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 12px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .reminder-entry-card:hover {
+    border-color: var(--blue);
+    box-shadow: 0 2px 12px var(--shadow);
+  }
+  .reminder-failed .reminder-entry-card { border-color: rgba(239,68,68,0.3); }
+
+  .reminder-entry-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px;
+    background: var(--charcoal-light);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap; gap: 8px;
+  }
+  .reminder-entry-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .reminder-vehicle-link {
+    font-weight: 700; font-size: 0.95rem;
+    color: var(--blue); text-decoration: none;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .reminder-vehicle-link:hover { text-decoration: underline; }
+  .reminder-owner { font-size: 0.85rem; color: var(--text-muted); }
+  .reminder-entry-time {
+    font-size: 0.8rem; color: var(--text-muted);
+    display: flex; align-items: center; gap: 5px;
+    white-space: nowrap;
+  }
+
+  .reminder-entry-body { padding: 14px 16px; }
+  .reminder-detail-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .reminder-detail-row:last-child { border-bottom: none; }
+  .reminder-detail-label {
+    font-size: 0.82rem; color: var(--text-muted); font-weight: 500;
+  }
+  .reminder-email {
+    font-size: 0.85rem; color: var(--text);
+    display: flex; align-items: center; gap: 5px;
+  }
+
+  .reminder-error {
+    margin-top: 10px; padding: 10px 12px;
+    background: var(--danger-bg); border: 1px solid var(--danger-border);
+    border-radius: 8px; font-size: 0.82rem; color: var(--red);
+    display: flex; align-items: flex-start; gap: 8px;
+  }
+  .reminder-error i { margin-top: 2px; flex-shrink: 0; }
+
+  .pagination-bar {
+    display: flex; align-items: center; justify-content: center;
+    gap: 8px; margin-top: 24px; flex-wrap: wrap;
+  }
+  .page-numbers { display: flex; align-items: center; gap: 4px; }
+  .page-num {
+    width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 8px; font-size: 0.85rem; font-weight: 500;
+    color: var(--text-muted); text-decoration: none;
+    transition: all 0.15s;
+  }
+  .page-num:hover { background: var(--charcoal-light); color: var(--text); }
+  .page-num.active {
+    background: var(--blue); color: #fff;
+  }
+  .page-dots { color: var(--text-muted); font-size: 0.85rem; padding: 0 4px; }
+
+  .empty-state {
+    text-align: center; padding: 60px 20px;
+    background: var(--charcoal); border: 1px dashed var(--border);
+    border-radius: 14px;
+  }
+  .empty-state-icon {
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    background: var(--gray-bg);
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 20px; font-size: 2rem; color: var(--text-muted);
+  }
+  .empty-state h3 { color: var(--text); margin: 0 0 8px; font-size: 1.2rem; }
+  .empty-state p { color: var(--text-muted); font-size: 0.9rem; max-width: 400px; margin: 0 auto 20px; }
+  .empty-state-actions { display: flex; gap: 10px; justify-content: center; }
+
+  .btn.disabled, .btn:disabled {
+    opacity: 0.4; pointer-events: none;
+  }
+
+  @media (max-width: 640px) {
+    .reminder-stats { grid-template-columns: 1fr 1fr; }
+    .reminder-entry { padding-left: 0; }
+    .reminder-entry::before { left: 13px; }
+    .reminder-entry-header { flex-direction: column; align-items: flex-start; }
+    .reminder-detail-row { flex-direction: column; align-items: flex-start; gap: 4px; }
+  }
+</style>
+
+{% endblock %}

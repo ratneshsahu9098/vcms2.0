@@ -337,6 +337,78 @@ def test_api_connection_debug():
 
 
 # ---------------------------------------------------------------------------
+# Document comparison — field-by-field diff against existing vehicle
+# ---------------------------------------------------------------------------
+
+COMPARE_FIELDS = [
+    ("engine_number", "Engine Number", "text"),
+    ("owner_name", "Owner Name", "text"),
+    ("address", "Address", "text"),
+    ("mobile_number", "Mobile Number", "text"),
+    ("vehicle_type", "Vehicle Type", "text"),
+    ("registration_date", "Registration Date", "date"),
+    ("puc_expiry", "PUC Expiry", "date"),
+    ("fitness_expiry", "Fitness Expiry", "date"),
+    ("permit_expiry", "Permit Expiry", "date"),
+    ("national_permit_number", "NP Auth No", "text"),
+    ("insurance_expiry", "Insurance Expiry", "date"),
+    ("insurance_company", "Insurance Company", "text"),
+    ("policy_number", "Policy Number", "text"),
+]
+
+
+def compare_vehicle_data(scanned, vehicle):
+    """Compare scanned data against an existing vehicle record.
+
+    Returns a list of dicts:
+        {field, label, type, existing_value, scanned_value, status}
+    status is one of: "empty" (DB is blank, fill from scan),
+                       "changed" (both have values that differ),
+                       "same" (values match)
+    """
+    from utils import parse_date
+
+    results = []
+    for field, label, ftype in COMPARE_FIELDS:
+        scanned_val = scanned.get(field)
+        existing_val = getattr(vehicle, field, None)
+
+        # Normalize scanned value
+        if ftype == "date":
+            if scanned_val:
+                from datetime import date as _date
+                if isinstance(scanned_val, _date):
+                    parsed_scan = scanned_val
+                else:
+                    parsed_scan = parse_date(str(scanned_val))
+            else:
+                parsed_scan = None
+            db_val = existing_val
+        else:
+            parsed_scan = str(scanned_val).strip() if scanned_val else ""
+            db_val = str(existing_val).strip() if existing_val else ""
+
+        # Determine status
+        if not db_val:
+            status = "empty"
+        elif parsed_scan and str(parsed_scan) != str(db_val):
+            status = "changed"
+        else:
+            status = "same"
+
+        results.append({
+            "field": field,
+            "label": label,
+            "type": ftype,
+            "existing_value": db_val if db_val else "—",
+            "scanned_value": parsed_scan if parsed_scan else "—",
+            "status": status,
+        })
+
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Document parser
 # ---------------------------------------------------------------------------
 
@@ -348,10 +420,12 @@ Return a JSON object with these fields (use null for missing fields):
     "chassis_number": "string",
     "engine_number": "string",
     "owner_name": "string",
+    "address": "string or null",
     "registration_date": "YYYY-MM-DD or null",
     "puc_expiry": "YYYY-MM-DD or null",
     "fitness_expiry": "YYYY-MM-DD or null",
     "permit_expiry": "YYYY-MM-DD or null",
+    "national_permit_number": "string or null (NP Auth No / National Permit Auth Number)",
     "insurance_expiry": "YYYY-MM-DD or null",
     "insurance_company": "string or null",
     "policy_number": "string or null",
@@ -364,6 +438,8 @@ Rules:
 - Use DD-MM-YYYY or DD/MM/YYYY format dates and convert to YYYY-MM-DD
 - Uppercase vehicle and chassis numbers
 - If a field is not found, set it to null
+- "NP Auth No", "National Permit Auth No", "NP Authorization" all map to national_permit_number
+- Address may appear as a block of text with house number, street, city, pin code — combine into one string
 
 OCR Text:
 {ocr_text}
