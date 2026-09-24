@@ -373,8 +373,11 @@ def generate_vehicle_qr(vehicle):
 SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
 
 DEFAULT_SETTINGS = {
+    "ai_provider": "openrouter",
     "openrouter_api_key": "",
     "openrouter_model": "dots-studio/dots-3-note-preview:free",
+    "gemini_api_key": "",
+    "gemini_model": "gemini-2.0-flash",
     "gdrive_auto_sync": True,
     "gdrive_last_sync": "",
     "gdrive_last_sync_status": "",
@@ -398,6 +401,18 @@ def load_settings():
     env_model = os.environ.get("VCMS_OPENROUTER_MODEL", "")
     if env_model and not settings.get("openrouter_model"):
         settings["openrouter_model"] = env_model
+
+    env_gemini_key = os.environ.get("VCMS_GEMINI_KEY", "")
+    if env_gemini_key and not settings.get("gemini_api_key"):
+        settings["gemini_api_key"] = env_gemini_key
+
+    env_gemini_model = os.environ.get("VCMS_GEMINI_MODEL", "")
+    if env_gemini_model and not settings.get("gemini_model"):
+        settings["gemini_model"] = env_gemini_model
+
+    env_provider = os.environ.get("VCMS_AI_PROVIDER", "")
+    if env_provider in ("openrouter", "gemini") and not settings.get("ai_provider"):
+        settings["ai_provider"] = env_provider
 
     return settings
 

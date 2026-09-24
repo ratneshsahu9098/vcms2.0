@@ -30,6 +30,11 @@ class Config:
     OPENROUTER_API_KEY = os.environ.get("VCMS_OPENROUTER_KEY", "")
     OPENROUTER_MODEL = os.environ.get("VCMS_OPENROUTER_MODEL", "nvidia/llama-nemotron-embed-vl-1b-v2:free")
 
+    # Google Gemini AI settings
+    GEMINI_API_KEY = os.environ.get("VCMS_GEMINI_KEY", "")
+    GEMINI_MODEL = os.environ.get("VCMS_GEMINI_MODEL", "gemini-2.0-flash")
+    AI_PROVIDER = os.environ.get("VCMS_AI_PROVIDER", "openrouter")
+
     # Google Drive settings
     GDRIVE_ENABLED = os.environ.get("VCMS_GDRIVE_ENABLED", "false").lower() == "true"
 

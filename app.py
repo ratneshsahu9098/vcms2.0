@@ -16,7 +16,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import pandas as pd
 
 from config import Config
-from models import db, Vehicle, TaxDetail, ChatSession, ChatMessage, ReminderLog
+from models import db, Vehicle, TaxDetail, ChatSession, ChatMessage, ReminderLog, ScanHistory
 from utils import (
     parse_date, allowed_file, normalize_import_dataframe,
     create_backup, list_backups, whatsapp_message, whatsapp_expired_reminder, generate_vehicle_qr
@@ -82,6 +82,9 @@ def _migrate_db_columns():
         ("vehicles", "owner_email", "VARCHAR(120)"),
         ("vehicles", "national_permit_number", "VARCHAR(50)"),
         ("vehicles", "address", "TEXT"),
+        ("scan_history", "tax_from", "DATE"),
+        ("scan_history", "tax_expiry", "DATE"),
+        ("scan_history", "tax_mode", "VARCHAR(30)"),
     ]
     with db.engine.begin() as conn:
         for table, column, col_type in migrations:
@@ -1062,6 +1065,7 @@ def register_routes(app):
             flash(error, "error")
             return redirect(url_for("settings"))
         auth_url, _ = flow.authorization_url(prompt="consent")
+        session["gdrive_code_verifier"] = flow.code_verifier
         return redirect(auth_url)
 
     @app.route("/settings/google/callback")
@@ -1071,7 +1075,8 @@ def register_routes(app):
         if not code:
             flash("Google Drive authorization failed.", "error")
             return redirect(url_for("settings"))
-        result = google_drive.save_token_from_code(code, GDRIVE_REDIRECT_URI)
+        code_verifier = session.pop("gdrive_code_verifier", None)
+        result = google_drive.save_token_from_code(code, GDRIVE_REDIRECT_URI, code_verifier=code_verifier)
         if result.get("ok"):
             email = google_drive.get_user_email()
             settings = load_settings()
@@ -1194,9 +1199,16 @@ def register_routes(app):
         if request.method == "POST":
             from utils import load_settings, save_settings
             current = load_settings()
+            if "ai_provider" in request.form:
+                provider = request.form.get("ai_provider", "").strip()
+                if provider in ("openrouter", "gemini"):
+                    current["ai_provider"] = provider
             if "openrouter_api_key" in request.form:
                 current["openrouter_api_key"] = request.form.get("openrouter_api_key", "").strip()
                 current["openrouter_model"] = request.form.get("openrouter_model", "").strip()
+            if "gemini_api_key" in request.form:
+                current["gemini_api_key"] = request.form.get("gemini_api_key", "").strip()
+                current["gemini_model"] = request.form.get("gemini_model", "").strip()
             current["gdrive_auto_sync"] = request.form.get("gdrive_auto_sync") == "on"
             if "smtp_server" in request.form:
                 current["smtp_server"] = request.form.get("smtp_server", "smtp.gmail.com").strip()
@@ -1220,11 +1232,20 @@ def register_routes(app):
         from utils import load_settings, save_settings
         api_key = request.form.get("openrouter_api_key", "").strip()
         model = request.form.get("openrouter_model", "").strip()
+        gemini_key = request.form.get("gemini_api_key", "").strip()
+        gemini_model = request.form.get("gemini_model", "").strip()
+        provider = request.form.get("ai_provider", "").strip()
         current = load_settings()
-        if api_key is not None:
+        if provider in ("openrouter", "gemini"):
+            current["ai_provider"] = provider
+        if "openrouter_api_key" in request.form:
             current["openrouter_api_key"] = api_key
         if model:
             current["openrouter_model"] = model
+        if "gemini_api_key" in request.form:
+            current["gemini_api_key"] = gemini_key
+        if gemini_model:
+            current["gemini_model"] = gemini_model
         save_settings(current)
         result = ai_service.test_api_connection()
         return jsonify(result)
@@ -1235,11 +1256,20 @@ def register_routes(app):
         from utils import load_settings, save_settings
         api_key = request.form.get("openrouter_api_key", "").strip()
         model = request.form.get("openrouter_model", "").strip()
+        gemini_key = request.form.get("gemini_api_key", "").strip()
+        gemini_model = request.form.get("gemini_model", "").strip()
+        provider = request.form.get("ai_provider", "").strip()
         current = load_settings()
-        if api_key is not None:
+        if provider in ("openrouter", "gemini"):
+            current["ai_provider"] = provider
+        if "openrouter_api_key" in request.form:
             current["openrouter_api_key"] = api_key
         if model:
             current["openrouter_model"] = model
+        if "gemini_api_key" in request.form:
+            current["gemini_api_key"] = gemini_key
+        if gemini_model:
+            current["gemini_model"] = gemini_model
         save_settings(current)
         result = ai_service.test_api_connection_debug()
         return jsonify(result)
@@ -1429,32 +1459,49 @@ def register_routes(app):
 
         if request.method == "POST":
             file = request.files.get("document")
+            ocr_text = ""
             if not file or file.filename == "":
                 flash("Please upload a document image.", "error")
-                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True, existing_vehicle=None, comparison=None)
+                last_scans = ScanHistory.query.order_by(ScanHistory.scanned_at.desc()).limit(3).all()
+                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True, existing_vehicle=None, comparison=None, last_scans=last_scans, ocr_text=ocr_text)
 
             try:
                 import pytesseract
                 from PIL import Image
-                import os
+                import io
+                import pymupdf
                 tesseract_path = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
                 if os.path.exists(tesseract_path):
                     pytesseract.pytesseract.tesseract_cmd = tesseract_path
-                img = Image.open(file)
-                ocr_text = pytesseract.image_to_string(img)
+
+                filename = (file.filename or "").lower()
+                if filename.endswith(".pdf"):
+                    doc = pymupdf.open(stream=file.read(), filetype="pdf")
+                    page_texts = []
+                    for page in doc:
+                        pix = page.get_pixmap(dpi=200)
+                        page_image = Image.open(io.BytesIO(pix.tobytes("png")))
+                        page_texts.append(pytesseract.image_to_string(page_image))
+                    ocr_text = "\n\n".join(t for t in page_texts if t and t.strip())
+                else:
+                    img = Image.open(file)
+                    ocr_text = pytesseract.image_to_string(img)
             except Exception as exc:
                 flash(f"OCR failed: {exc}", "error")
-                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True, existing_vehicle=None, comparison=None)
+                last_scans = ScanHistory.query.order_by(ScanHistory.scanned_at.desc()).limit(3).all()
+                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True, existing_vehicle=None, comparison=None, last_scans=last_scans, ocr_text=ocr_text)
 
             if not ocr_text.strip():
-                flash("No text could be extracted from the image.", "error")
-                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True, existing_vehicle=None, comparison=None)
+                flash("No text could be extracted from the document.", "error")
+                last_scans = ScanHistory.query.order_by(ScanHistory.scanned_at.desc()).limit(3).all()
+                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True, existing_vehicle=None, comparison=None, last_scans=last_scans, ocr_text=ocr_text)
 
             try:
                 parsed_data = ai_service.parse_document_text(ocr_text)
             except Exception as exc:
                 flash(f"AI parsing failed: {exc}", "error")
-                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True, existing_vehicle=None, comparison=None)
+                last_scans = ScanHistory.query.order_by(ScanHistory.scanned_at.desc()).limit(3).all()
+                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True, existing_vehicle=None, comparison=None, last_scans=last_scans, ocr_text=ocr_text)
 
             existing_vehicle = None
             comparison = None
@@ -1469,6 +1516,42 @@ def register_routes(app):
                 if existing_vehicle:
                     comparison = ai_service.compare_vehicle_data(parsed_data, existing_vehicle)
 
+            # Save to scan history (keep last 3)
+            try:
+                scan_record = ScanHistory(
+                    vehicle_number=parsed_data.get("vehicle_number", ""),
+                    chassis_number=parsed_data.get("chassis_number", ""),
+                    engine_number=parsed_data.get("engine_number", ""),
+                    owner_name=parsed_data.get("owner_name", ""),
+                    address=parsed_data.get("address", ""),
+                    vehicle_type=parsed_data.get("vehicle_type", ""),
+                    registration_date=parse_date(parsed_data.get("registration_date")),
+                    puc_expiry=parse_date(parsed_data.get("puc_expiry")),
+                    fitness_expiry=parse_date(parsed_data.get("fitness_expiry")),
+                    permit_expiry=parse_date(parsed_data.get("permit_expiry")),
+                    national_permit_number=parsed_data.get("national_permit_number", ""),
+                    tax_from=parse_date(parsed_data.get("tax_from")),
+                    tax_expiry=parse_date(parsed_data.get("tax_expiry")),
+                    tax_mode=parsed_data.get("tax_mode", ""),
+                    insurance_expiry=parse_date(parsed_data.get("insurance_expiry")),
+                    insurance_company=parsed_data.get("insurance_company", ""),
+                    policy_number=parsed_data.get("policy_number", ""),
+                    document_type=parsed_data.get("document_type", "Unknown"),
+                )
+                db.session.add(scan_record)
+                db.session.commit()
+
+                # Keep only last 3 scans
+                old_scans = ScanHistory.query.order_by(ScanHistory.scanned_at.desc()).offset(3).all()
+                for old in old_scans:
+                    db.session.delete(old)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
+            # Fetch last 3 scan history
+            last_scans = ScanHistory.query.order_by(ScanHistory.scanned_at.desc()).limit(3).all()
+
             return render_template(
                 "ai_document_parser.html",
                 parsed_data=parsed_data,
@@ -1476,9 +1559,71 @@ def register_routes(app):
                 ai_enabled=True,
                 existing_vehicle=existing_vehicle,
                 comparison=comparison,
+                last_scans=last_scans,
             )
 
-        return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True, existing_vehicle=None, comparison=None)
+        last_scans = ScanHistory.query.order_by(ScanHistory.scanned_at.desc()).limit(3).all()
+        return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True, existing_vehicle=None, comparison=None, last_scans=last_scans)
+
+    @app.route("/ai/scan-history/<int:scan_id>")
+    @login_required
+    def ai_scan_view(scan_id):
+        scan = ScanHistory.query.get_or_404(scan_id)
+        parsed_data = scan.to_dict()
+        parsed_data.pop("id", None)
+        parsed_data.pop("scanned_at", None)
+
+        existing_vehicle = None
+        comparison = None
+        vnum = str(parsed_data.get("vehicle_number", "")).strip().upper()
+        chassis = str(parsed_data.get("chassis_number", "")).strip().upper()
+        if vnum or chassis:
+            existing_vehicle = Vehicle.query.filter(
+                db.or_(Vehicle.vehicle_number == vnum, Vehicle.chassis_number == chassis)
+            ).first()
+        if existing_vehicle:
+            comparison = ai_service.compare_vehicle_data(parsed_data, existing_vehicle)
+
+        last_scans = ScanHistory.query.order_by(ScanHistory.scanned_at.desc()).limit(3).all()
+        return render_template(
+            "ai_document_parser.html",
+            parsed_data=parsed_data,
+            ocr_text=None,
+            ai_enabled=True,
+            existing_vehicle=existing_vehicle,
+            comparison=comparison,
+            last_scans=last_scans,
+        )
+
+    @app.route("/ai/scan-history/<int:scan_id>/edit", methods=["POST"])
+    @login_required
+    def ai_scan_edit(scan_id):
+        scan = ScanHistory.query.get_or_404(scan_id)
+        parsed_data = scan.to_dict()
+        parsed_data.pop("id", None)
+        parsed_data.pop("scanned_at", None)
+
+        existing_vehicle = None
+        comparison = None
+        vnum = str(parsed_data.get("vehicle_number", "")).strip().upper()
+        chassis = str(parsed_data.get("chassis_number", "")).strip().upper()
+        if vnum or chassis:
+            existing_vehicle = Vehicle.query.filter(
+                db.or_(Vehicle.vehicle_number == vnum, Vehicle.chassis_number == chassis)
+            ).first()
+        if existing_vehicle:
+            comparison = ai_service.compare_vehicle_data(parsed_data, existing_vehicle)
+
+        last_scans = ScanHistory.query.order_by(ScanHistory.scanned_at.desc()).limit(3).all()
+        return render_template(
+            "ai_document_parser.html",
+            parsed_data=parsed_data,
+            ocr_text=None,
+            ai_enabled=True,
+            existing_vehicle=existing_vehicle,
+            comparison=comparison,
+            last_scans=last_scans,
+        )
 
     @app.route("/ai/parse-document/add", methods=["POST"])
     @login_required
@@ -1504,6 +1649,9 @@ def register_routes(app):
                 "fitness_expiry": parse_date(request.form.get("fitness_expiry")),
                 "permit_expiry": parse_date(request.form.get("permit_expiry")),
                 "national_permit_number": request.form.get("national_permit_number", "").strip().upper(),
+                "tax_from": parse_date(request.form.get("tax_from")),
+                "tax_expiry": parse_date(request.form.get("tax_expiry")),
+                "tax_mode": request.form.get("tax_mode", "").strip(),
                 "insurance_expiry": parse_date(request.form.get("insurance_expiry")),
                 "insurance_company": request.form.get("insurance_company", "").strip(),
                 "policy_number": request.form.get("policy_number", "").strip(),
@@ -1556,6 +1704,9 @@ def register_routes(app):
             fitness_expiry=parse_date(request.form.get("fitness_expiry")),
             permit_expiry=parse_date(request.form.get("permit_expiry")),
             national_permit_number=request.form.get("national_permit_number", "").strip().upper(),
+            tax_from=parse_date(request.form.get("tax_from")),
+            tax_expiry=parse_date(request.form.get("tax_expiry")),
+            tax_mode=request.form.get("tax_mode", "").strip(),
             insurance_expiry=parse_date(request.form.get("insurance_expiry")),
             insurance_company=request.form.get("insurance_company", "").strip(),
             policy_number=request.form.get("policy_number", "").strip(),

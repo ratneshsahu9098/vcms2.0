@@ -191,3 +191,52 @@ class ReminderLog(db.Model):
     sent_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     vehicle = db.relationship("Vehicle", backref=db.backref("reminder_logs", lazy="dynamic"))
+
+
+class ScanHistory(db.Model):
+    __tablename__ = "scan_history"
+
+    id = db.Column(db.Integer, primary_key=True)
+    vehicle_number = db.Column(db.String(20))
+    chassis_number = db.Column(db.String(50))
+    engine_number = db.Column(db.String(50))
+    owner_name = db.Column(db.String(120))
+    address = db.Column(db.Text)
+    vehicle_type = db.Column(db.String(50))
+    registration_date = db.Column(db.Date)
+    puc_expiry = db.Column(db.Date)
+    fitness_expiry = db.Column(db.Date)
+    permit_expiry = db.Column(db.Date)
+    national_permit_number = db.Column(db.String(50))
+    tax_from = db.Column(db.Date)
+    tax_expiry = db.Column(db.Date)
+    tax_mode = db.Column(db.String(30))
+    insurance_expiry = db.Column(db.Date)
+    insurance_company = db.Column(db.String(120))
+    policy_number = db.Column(db.String(50))
+    document_type = db.Column(db.String(30))
+    scanned_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "vehicle_number": self.vehicle_number or "",
+            "chassis_number": self.chassis_number or "",
+            "engine_number": self.engine_number or "",
+            "owner_name": self.owner_name or "",
+            "address": self.address or "",
+            "vehicle_type": self.vehicle_type or "",
+            "registration_date": self.registration_date.isoformat() if self.registration_date else "",
+            "puc_expiry": self.puc_expiry.isoformat() if self.puc_expiry else "",
+            "fitness_expiry": self.fitness_expiry.isoformat() if self.fitness_expiry else "",
+            "permit_expiry": self.permit_expiry.isoformat() if self.permit_expiry else "",
+            "national_permit_number": self.national_permit_number or "",
+            "tax_from": self.tax_from.isoformat() if self.tax_from else "",
+            "tax_expiry": self.tax_expiry.isoformat() if self.tax_expiry else "",
+            "tax_mode": self.tax_mode or "",
+            "insurance_expiry": self.insurance_expiry.isoformat() if self.insurance_expiry else "",
+            "insurance_company": self.insurance_company or "",
+            "policy_number": self.policy_number or "",
+            "document_type": self.document_type or "",
+            "scanned_at": self.scanned_at.strftime("%d %b %Y, %I:%M %p") if self.scanned_at else "",
+        }

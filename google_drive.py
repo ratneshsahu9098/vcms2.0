@@ -232,12 +232,14 @@ def start_oauth_flow(redirect_uri):
     return flow, None
 
 
-def save_token_from_code(code, redirect_uri):
+def save_token_from_code(code, redirect_uri, code_verifier=None):
     try:
         config = _get_client_config()
         if not config:
             return {"ok": False, "error": "Google Drive credentials not found."}
         flow = Flow.from_client_config(config, scopes=SCOPES, redirect_uri=redirect_uri)
+        if code_verifier:
+            flow.code_verifier = code_verifier
         flow.fetch_token(code=code)
         creds = flow.credentials
         _save_token(creds)

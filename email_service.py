@@ -829,7 +829,7 @@ def send_all_vehicle_details(to_email, vehicle_ids=None):
     return send_email(to_email, f"VCMS — {total} Vehicle Details Report", html)
 
 
-AUTO_REMINDER_WINDOWS = [7, 3, 1, 0]
+AUTO_REMINDER_WINDOWS = [3, 0]
 
 
 def auto_reminder_job():

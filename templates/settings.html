@@ -32,44 +32,89 @@
 </div>
 
 <div class="panel" style="margin-top:20px;">
-  <h3 class="panel-title"><i class="fa-solid fa-robot"></i> AI Settings (OpenRouter)</h3>
+  <h3 class="panel-title"><i class="fa-solid fa-robot"></i> AI Settings</h3>
   <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;">
-    Configure your OpenRouter API key and model. Get a free key at
-    <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a>
+    Choose an AI provider and configure its API key. Supported providers: OpenRouter or Google Gemini.
   </p>
+
+  <div style="margin-bottom:18px;">
+    <label style="font-weight:600; color:var(--text); display:block; margin-bottom:8px;">Provider</label>
+    <div style="display:flex; gap:16px; flex-wrap:wrap;">
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:var(--text);">
+        <input type="radio" name="ai_provider" value="openrouter"
+               onchange="switchProvider()" {{ 'checked' if (ai_settings.ai_provider or 'openrouter') == 'openrouter' }}>
+        <i class="fa-solid fa-shield-halved"></i> OpenRouter
+      </label>
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:var(--text);">
+        <input type="radio" name="ai_provider" value="gemini"
+               onchange="switchProvider()" {{ 'checked' if (ai_settings.ai_provider or 'openrouter') == 'gemini' }}>
+        <i class="fa-solid fa-star"></i> Google Gemini
+      </label>
+    </div>
+  </div>
+
   <form method="POST" id="settingsForm">
-    <div class="form-grid">
-      <div class="form-group form-group-full">
-        <label>API Key</label>
-        <div style="display:flex; gap:10px; align-items:center;">
-          <input type="password" name="openrouter_api_key" id="apiKeyInput"
-                 class="form-control" style="flex:1;"
-                 value="{{ ai_settings.openrouter_api_key or '' }}"
-                 placeholder="sk-or-v1-...">
-          <button type="button" class="btn btn-outline-secondary" onclick="toggleKey()" title="Show/Hide key">
-            <i class="fa-solid fa-eye" id="eyeIcon"></i>
-          </button>
+    <div id="openrouterSection">
+      <div class="form-grid">
+        <div class="form-group form-group-full">
+          <label>OpenRouter API Key</label>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <input type="password" name="openrouter_api_key" id="apiKeyInput"
+                   class="form-control" style="flex:1;"
+                   value="{{ ai_settings.openrouter_api_key or '' }}"
+                   placeholder="sk-or-v1-...">
+            <button type="button" class="btn btn-outline-secondary" onclick="toggleKey()" title="Show/Hide key">
+              <i class="fa-solid fa-eye" id="eyeIcon"></i>
+            </button>
+          </div>
+          <small style="color:var(--text-muted);">Get a free key at <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a></small>
+        </div>
+        <div class="form-group form-group-full">
+          <label>Quick Select</label>
+          <select class="form-select" id="modelSelect" onchange="selectModel(this.value)">
+            <option value="">-- Choose a fast model --</option>
+            <option value="google/gemma-3-1b-it:free">Gemma 3 1B (Fastest)</option>
+            <option value="meta-llama/llama-3.2-3b-instruct:free">Llama 3.2 3B (Fast)</option>
+            <option value="qwen/qwen3-8b:free">Qwen3 8B (Balanced)</option>
+            <option value="microsoft/phi-4-reasoning:free">Phi-4 Reasoning</option>
+            <option value="__custom__">Custom (type below)</option>
+          </select>
+        </div>
+        <div class="form-group form-group-full">
+          <label>Model ID</label>
+          <input type="text" name="openrouter_model" id="modelInput" class="form-control"
+                 value="{{ ai_settings.openrouter_model or '' }}"
+                 placeholder="e.g. google/gemma-3-1b-it:free">
+          <small style="color:var(--text-muted);">Browse all models at <a href="https://openrouter.ai/models" target="_blank">openrouter.ai/models</a></small>
         </div>
       </div>
-      <div class="form-group form-group-full">
-        <label>Quick Select</label>
-        <select class="form-select" id="modelSelect" onchange="selectModel(this.value)">
-          <option value="">-- Choose a fast model --</option>
-          <option value="google/gemma-3-1b-it:free">Gemma 3 1B (Fastest)</option>
-          <option value="meta-llama/llama-3.2-3b-instruct:free">Llama 3.2 3B (Fast)</option>
-          <option value="qwen/qwen3-8b:free">Qwen3 8B (Balanced)</option>
-          <option value="microsoft/phi-4-reasoning:free">Phi-4 Reasoning</option>
-          <option value="__custom__">Custom (type below)</option>
-        </select>
-      </div>
-      <div class="form-group form-group-full">
-        <label>Model ID</label>
-        <input type="text" name="openrouter_model" id="modelInput" class="form-control"
-               value="{{ ai_settings.openrouter_model or '' }}"
-               placeholder="e.g. google/gemma-3-1b-it:free">
-        <small style="color:var(--text-muted);">Browse all models at <a href="https://openrouter.ai/models" target="_blank">openrouter.ai/models</a></small>
+    </div>
+
+    <div id="geminiSection">
+      <div class="form-grid">
+        <div class="form-group form-group-full">
+          <label>Gemini API Key</label>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <input type="password" name="gemini_api_key" id="geminiApiKeyInput"
+                   class="form-control" style="flex:1;"
+                   value="{{ ai_settings.gemini_api_key or '' }}"
+                   placeholder="AIzaSy...">
+            <button type="button" class="btn btn-outline-secondary" onclick="toggleGeminiKey()" title="Show/Hide key">
+              <i class="fa-solid fa-eye" id="geminiEyeIcon"></i>
+            </button>
+          </div>
+          <small style="color:var(--text-muted);">Create a free API key at <a href="https://aistudio.google.com/app/apikey" target="_blank">aistudio.google.com/apikey</a></small>
+        </div>
+        <div class="form-group form-group-full">
+          <label>Model ID</label>
+          <input type="text" name="gemini_model" id="geminiModelInput" class="form-control"
+                 value="{{ ai_settings.gemini_model or '' }}"
+                 placeholder="e.g. gemini-2.0-flash">
+          <small style="color:var(--text-muted);">e.g. <code>gemini-2.0-flash</code>, <code>gemini-2.5-flash</code>, <code>gemini-2.5-pro</code></small>
+        </div>
       </div>
     </div>
+
     <div class="form-actions" style="flex-wrap:wrap;">
       <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> Save Settings</button>
       <button type="button" class="btn btn-outline-secondary" id="testBtn" onclick="testApi(false)">
@@ -78,10 +123,18 @@
       <label style="display:flex; align-items:center; gap:6px; color:var(--text-muted); font-size:0.85rem; cursor:pointer; margin-left:8px;">
         <input type="checkbox" id="debugToggle" style="accent-color:var(--blue);"> Debug Mode
       </label>
-      {% if ai_settings.openrouter_api_key %}
-      <span class="badge-status status-green" style="margin-left:8px;"><i class="fa-solid fa-check-circle"></i> API key configured</span>
+      {% if (ai_settings.ai_provider or 'openrouter') == 'gemini' %}
+        {% if ai_settings.gemini_api_key %}
+        <span class="badge-status status-green" style="margin-left:8px;"><i class="fa-solid fa-check-circle"></i> Gemini key configured</span>
+        {% else %}
+        <span class="badge-status status-red" style="margin-left:8px;"><i class="fa-solid fa-xmark-circle"></i> No Gemini key set</span>
+        {% endif %}
       {% else %}
-      <span class="badge-status status-red" style="margin-left:8px;"><i class="fa-solid fa-xmark-circle"></i> No API key set</span>
+        {% if ai_settings.openrouter_api_key %}
+        <span class="badge-status status-green" style="margin-left:8px;"><i class="fa-solid fa-check-circle"></i> OpenRouter key configured</span>
+        {% else %}
+        <span class="badge-status status-red" style="margin-left:8px;"><i class="fa-solid fa-xmark-circle"></i> No OpenRouter key set</span>
+        {% endif %}
       {% endif %}
     </div>
   </form>
@@ -254,6 +307,29 @@ function toggleKey() {
   }
 }
 
+function toggleGeminiKey() {
+  const input = document.getElementById('geminiApiKeyInput');
+  const icon = document.getElementById('geminiEyeIcon');
+  if (input.type === 'password') {
+    input.type = 'text';
+    icon.classList.replace('fa-eye', 'fa-eye-slash');
+  } else {
+    input.type = 'password';
+    icon.classList.replace('fa-eye-slash', 'fa-eye');
+  }
+}
+
+function switchProvider() {
+  const provider = document.querySelector('input[name="ai_provider"]:checked').value;
+  document.getElementById('openrouterSection').style.display = provider === 'openrouter' ? '' : 'none';
+  document.getElementById('geminiSection').style.display = provider === 'gemini' ? '' : 'none';
+}
+
+function currentProvider() {
+  const el = document.querySelector('input[name="ai_provider"]:checked');
+  return el ? el.value : 'openrouter';
+}
+
 function selectModel(value) {
   const input = document.getElementById('modelInput');
   if (value === '__custom__') {
@@ -274,6 +350,7 @@ document.addEventListener('DOMContentLoaded', function() {
   } else if (current) {
     select.value = '__custom__';
   }
+  switchProvider();
 });
 
 function testApi(forceDebug) {
@@ -281,8 +358,11 @@ function testApi(forceDebug) {
   const btn = document.getElementById('testBtn');
   const result = document.getElementById('testResult');
   const debugOut = document.getElementById('debugOutput');
+  const provider = currentProvider();
   const apiKey = document.getElementById('apiKeyInput').value;
   const model = document.getElementById('modelInput').value;
+  const geminiKey = document.getElementById('geminiApiKeyInput').value;
+  const geminiModel = document.getElementById('geminiModelInput').value;
 
   btn.disabled = true;
   btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Testing...';
@@ -294,7 +374,11 @@ function testApi(forceDebug) {
   fetch(url, {
     method: 'POST',
     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-    body: 'openrouter_api_key=' + encodeURIComponent(apiKey) + '&openrouter_model=' + encodeURIComponent(model)
+    body: 'ai_provider=' + encodeURIComponent(provider) +
+          '&openrouter_api_key=' + encodeURIComponent(apiKey) +
+          '&openrouter_model=' + encodeURIComponent(model) +
+          '&gemini_api_key=' + encodeURIComponent(geminiKey) +
+          '&gemini_model=' + encodeURIComponent(geminiModel)
   })
   .then(r => r.json())
   .then(data => {

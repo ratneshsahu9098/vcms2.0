@@ -7,22 +7,22 @@
 <div class="panel" style="text-align:center; padding:60px 20px;">
   <i class="fa-solid fa-file-circle-xmark" style="font-size:3rem; color:var(--text-muted); margin-bottom:16px;"></i>
   <h3 style="color:var(--text);">API Key Not Configured</h3>
-  <p style="color:var(--text-muted); margin:10px 0 20px;">Set your OpenRouter API key to use the document scanner.</p>
-  <code style="background:var(--bg); padding:8px 16px; border-radius:8px; color:var(--green);">set VCMS_OPENROUTER_KEY=sk-or-...your-key-here</code>
-  <p style="color:var(--text-muted); margin-top:12px; font-size:0.85rem;">Get a free key at <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a></p>
+  <p style="color:var(--text-muted); margin:10px 0 20px;">Set your OpenRouter or Google Gemini API key to use the document scanner.</p>
+  <code style="background:var(--bg); padding:8px 16px; border-radius:8px; color:var(--green);">set VCMS_AI_PROVIDER=gemini</code>
+  <p style="color:var(--text-muted); margin-top:12px; font-size:0.85rem;">Get a free Gemini key at <a href="https://aistudio.google.com/app/apikey" target="_blank">aistudio.google.com/apikey</a> or an OpenRouter key at <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a></p>
 </div>
 {% else %}
 
 {% if not parsed_data %}
 <div class="panel">
-  <h3 style="color:var(--text); margin:0 0 16px;"><i class="fa-solid fa-cloud-arrow-up" style="color:var(--blue);"></i> Upload Document Image</h3>
-  <p style="color:var(--text-muted); margin-bottom:16px;">Upload an image of RC, Insurance, PUC, or Fitness certificate. AI will extract vehicle data automatically.</p>
+  <h3 style="color:var(--text); margin:0 0 16px;"><i class="fa-solid fa-cloud-arrow-up" style="color:var(--blue);"></i> Upload Document</h3>
+  <p style="color:var(--text-muted); margin-bottom:16px;">Upload an image or PDF of RC, Insurance, PUC, or Fitness certificate. AI will extract vehicle data automatically.</p>
   <form method="POST" enctype="multipart/form-data" class="upload-zone" id="uploadForm">
     <div class="upload-area" id="dropZone" onclick="document.getElementById('fileInput').click()">
       <i class="fa-solid fa-image" style="font-size:2.5rem; color:var(--text-muted); margin-bottom:12px;"></i>
       <p style="color:var(--text-muted); margin:0;">Click or drag an image here</p>
-      <p style="color:var(--text-muted); font-size:0.8rem; margin:6px 0 0;">Supports: JPG, PNG, BMP, TIFF</p>
-      <input type="file" name="document" id="fileInput" accept="image/*" style="display:none;" required>
+      <p style="color:var(--text-muted); font-size:0.8rem; margin:6px 0 0;">Supports: JPG, PNG, BMP, TIFF, PDF</p>
+      <input type="file" name="document" id="fileInput" accept="image/*,.pdf,application/pdf" style="display:none;" required>
     </div>
     <div id="preview" style="display:none; margin-top:16px;">
       <img id="previewImg" style="max-width:100%; max-height:300px; border-radius:8px; border:1px solid var(--border);">
@@ -34,6 +34,54 @@
     </div>
   </form>
 </div>
+
+{% if ocr_text %}
+<div class="panel" style="margin-top:18px;">
+  <h3 style="color:var(--text); margin:0 0 16px;"><i class="fa-solid fa-file-lines" style="color:var(--blue);"></i> Raw Extracted Text</h3>
+  <p style="color:var(--text-muted); margin:0 0 8px; font-size:0.82rem;">Text read from the uploaded document. Use this to check if OCR picked up the right details.</p>
+  <pre style="background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px; color:var(--text-muted); font-size:0.82rem; max-height:300px; overflow-y:auto; white-space:pre-wrap;">{{ ocr_text }}</pre>
+</div>
+{% endif %}
+
+{% if last_scans %}
+<div class="panel" style="margin-top:18px;">
+  <h3 style="color:var(--text); margin:0 0 16px;"><i class="fa-solid fa-clock-rotate-left" style="color:var(--blue);"></i> Recent Scans</h3>
+  <div style="overflow-x:auto;">
+    <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+      <thead>
+        <tr style="border-bottom:2px solid var(--border);">
+          <th style="text-align:left; padding:8px 10px; color:var(--text);">Vehicle No</th>
+          <th style="text-align:left; padding:8px 10px; color:var(--text);">Owner</th>
+          <th style="text-align:left; padding:8px 10px; color:var(--text);">Document</th>
+          <th style="text-align:left; padding:8px 10px; color:var(--text);">Scanned At</th>
+          <th style="text-align:center; padding:8px 10px; color:var(--text);">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for scan in last_scans %}
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:8px 10px; color:var(--text); font-weight:500;">{{ scan.vehicle_number or '-' }}</td>
+          <td style="padding:8px 10px; color:var(--text-muted);">{{ scan.owner_name or '-' }}</td>
+          <td style="padding:8px 10px; color:var(--text-muted);">{{ scan.document_type or '-' }}</td>
+          <td style="padding:8px 10px; color:var(--text-muted);">{{ scan.scanned_at }}</td>
+          <td style="padding:8px 10px; text-align:center; white-space:nowrap;">
+            <a href="{{ url_for('ai_scan_view', scan_id=scan.id) }}" class="btn btn-sm btn-outline-secondary" style="font-size:0.78rem; padding:3px 10px; text-decoration:none;" title="View scan details">
+              <i class="fa-solid fa-eye"></i> View
+            </a>
+            <form method="POST" action="{{ url_for('ai_scan_edit', scan_id=scan.id) }}" style="display:inline;">
+              <button type="submit" class="btn btn-sm btn-outline-primary" style="font-size:0.78rem; padding:3px 10px;" title="Edit this scan data again">
+                <i class="fa-solid fa-pen"></i> Edit
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
 {% else %}
 
 <div class="panel" style="margin-bottom:18px;">
@@ -51,8 +99,17 @@
   </div>
   <a href="{{ url_for('view_vehicle', vehicle_id=existing_vehicle.id) }}" style="display:inline-block; margin-top:8px; font-size:0.85rem;">View existing record <i class="fa-solid fa-arrow-up-right-from-square"></i></a>
 </div>
+{% endif %}
 
-{% if comparison %}
+{% if ocr_text %}
+<details style="margin-bottom:18px;">
+  <summary style="color:var(--text-muted); cursor:pointer; font-size:0.85rem;">View raw OCR text</summary>
+  <pre style="background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px; margin-top:8px; color:var(--text-muted); font-size:0.82rem; max-height:200px; overflow-y:auto;">{{ ocr_text }}</pre>
+</details>
+{% endif %}
+
+<form method="POST" action="{{ url_for('ai_parse_add_vehicle') }}">
+{% if existing_vehicle and comparison %}
 <div class="panel" style="margin-bottom:18px;">
   <h4 style="color:var(--text); margin:0 0 12px;"><i class="fa-solid fa-code-compare" style="color:var(--blue);"></i> Field Comparison</h4>
   <p style="color:var(--text-muted); margin:0 0 16px; font-size:0.85rem;">
@@ -109,16 +166,7 @@
   </div>
 </div>
 {% endif %}
-{% endif %}
 
-{% if ocr_text %}
-<details style="margin-bottom:18px;">
-  <summary style="color:var(--text-muted); cursor:pointer; font-size:0.85rem;">View raw OCR text</summary>
-  <pre style="background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px; margin-top:8px; color:var(--text-muted); font-size:0.82rem; max-height:200px; overflow-y:auto;">{{ ocr_text }}</pre>
-</details>
-{% endif %}
-
-<form method="POST" action="{{ url_for('ai_parse_add_vehicle') }}">
   <div class="detail-card">
     <h4 style="color:var(--text); margin:0 0 16px;">Extracted Vehicle Information</h4>
     <div class="form-grid">
@@ -173,6 +221,18 @@
       <div class="form-group">
         <label>NP Auth No (National Permit)</label>
         <input type="text" name="national_permit_number" class="form-control" value="{{ parsed_data.national_permit_number or '' }}" placeholder="NP Auth No">
+      </div>
+      <div class="form-group">
+        <label>Tax Mode</label>
+        <input type="text" name="tax_mode" class="form-control" value="{{ parsed_data.tax_mode or '' }}" placeholder="e.g. Quarterly, Annual, Life Tax">
+      </div>
+      <div class="form-group">
+        <label>Tax From</label>
+        <input type="date" name="tax_from" class="form-control" value="{{ parsed_data.tax_from or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Tax Expiry</label>
+        <input type="date" name="tax_expiry" class="form-control" value="{{ parsed_data.tax_expiry or '' }}">
       </div>
       <div class="form-group">
         <label>Insurance Expiry</label>
@@ -235,8 +295,19 @@
 
   function showPreview(file) {
     if (!file) return;
+    submitBtn.disabled = false;
+    const isPdf = (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'));
+    if (isPdf) {
+      previewImg.style.display = 'none';
+      preview.innerHTML = '<i class="fa-solid fa-file-pdf" style="font-size:2rem; color:var(--red, #ef4444); margin-bottom:8px;"></i>' +
+                          '<p style="margin:0; color:var(--text); font-weight:500;">' + file.name + '</p>' +
+                          '<p style="margin:4px 0 0; color:var(--text-muted); font-size:0.8rem;">PDF document ready to scan</p>';
+      preview.style.display = 'block';
+      return;
+    }
+    previewImg.style.display = '';
     const reader = new FileReader();
-    reader.onload = e => { previewImg.src = e.target.result; preview.style.display = 'block'; submitBtn.disabled = false; };
+    reader.onload = e => { previewImg.src = e.target.result; preview.style.display = 'block'; };
     reader.readAsDataURL(file);
   }
 </script>
