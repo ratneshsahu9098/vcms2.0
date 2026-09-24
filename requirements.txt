@@ -1,17 +1,29 @@
 Flask==3.0.3
 Flask-SQLAlchemy==3.1.1
+Werkzeug==3.0.3
+
+# Scheduler
+APScheduler==3.11.3
+Flask-APScheduler==1.13.1
+
+# Data processing
 pandas==2.2.2
 openpyxl==3.1.5
-Werkzeug==3.0.3
+
+# QR generation
 qrcode[pil]==7.4.2
 Pillow==10.4.0
-PyMuPDF>=1.24.0
-requests>=2.31.0
-pytesseract>=0.3.10
-python-dotenv>=1.0.0
-APScheduler>=3.10.0
-Flask-APScheduler>=1.13.0
-google-api-python-client>=2.108.0
-google-auth>=2.23.0
-google-auth-oauthlib>=1.1.0
-google-auth-httplib2>=0.1.1
+
+# OCR & PDF
+pytesseract==0.3.13
+PyMuPDF==1.28.2
+
+# HTTP & environment
+requests==2.34.2
+python-dotenv==1.2.3
+
+# Google Drive / Gemini integrations
+google-api-python-client==2.200.0
+google-auth==2.58.0
+google-auth-oauthlib==1.4.1
+google-auth-httplib2==0.4.2
