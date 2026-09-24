@@ -265,6 +265,53 @@ def chat_completion_stream(messages, model=None):
     return openrouter_chat_completion_stream(messages, model)
 
 
+# ---------------------------------------------------------------------------
+# Retry helper — transient 429 / 5xx / connection errors backed off and retried
+# ---------------------------------------------------------------------------
+
+RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
+MAX_RETRIES = 3
+
+
+def _api_error_message(r):
+    """Extract a human-readable message from an API error response body."""
+    try:
+        data = r.json()
+        return data.get("error", {}).get("message", "") or r.text[:200]
+    except Exception:
+        return r.text[:200]
+
+
+def _post_with_retry(url, payload, headers=None, timeout=120):
+    import time
+    headers = headers or {}
+    last_error = None
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            r = requests.post(url, json=payload, headers=headers, timeout=timeout)
+        except requests.exceptions.ConnectionError as exc:
+            last_error = exc
+            if attempt >= MAX_RETRIES:
+                raise
+            time.sleep(2 ** attempt)
+            continue
+
+        if r.status_code in RETRYABLE_STATUSES:
+            message = _api_error_message(r) or f"HTTP {r.status_code}"
+            last_error = requests.exceptions.HTTPError(
+                f"{r.status_code} {r.reason or ''}: {message}".strip(), response=r
+            )
+            if attempt >= MAX_RETRIES:
+                raise last_error
+            time.sleep(2 ** attempt)
+            continue
+
+        r.raise_for_status()
+        return r
+
+    raise last_error
+
+
 def openrouter_chat_completion(messages, model=None):
     model = model or get_model()
     payload = {
@@ -272,8 +319,7 @@ def openrouter_chat_completion(messages, model=None):
         "messages": messages,
         "temperature": 0.3,
     }
-    r = requests.post(OPENROUTER_URL, json=payload, headers=get_headers(), timeout=120)
-    r.raise_for_status()
+    r = _post_with_retry(OPENROUTER_URL, payload, headers=get_headers())
     data = r.json()
     content = data.get("choices", [{}])[0].get("message", {}).get("content")
     return content.strip() if content else None
@@ -307,8 +353,7 @@ def gemini_chat_completion(messages, model=None):
     model = model or get_gemini_model()
     url = f"{GEMINI_URL}/models/{model}:generateContent?key={get_gemini_api_key()}"
     payload = _to_gemini_payload(messages, model)
-    r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=120)
-    r.raise_for_status()
+    r = _post_with_retry(url, payload, headers={"Content-Type": "application/json"})
     data = r.json()
     parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
     text = "".join(p.get("text", "") for p in parts)
