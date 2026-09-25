@@ -1,5 +1,6 @@
 import os
 import shutil
+import sqlite3
 import zipfile
 from datetime import datetime
 
@@ -8,16 +9,43 @@ from app.config import Config
 
 def create_backup(db_path, backup_folder):
     """Create a full backup archive: database + settings.json
-    (settings.json carries API keys, AI model, SMTP and reminder config)."""
+    (settings.json carries API keys, AI model, SMTP and reminder config).
+    Uses SQLite's backup API for consistent snapshot of live database."""
     os.makedirs(backup_folder, exist_ok=True)
     timestamp = datetime.now().strftime("%Y_%m_%d_%H%M%S")
     backup_name = f"backup_{timestamp}.zip"
     backup_path = os.path.join(backup_folder, backup_name)
-    with zipfile.ZipFile(backup_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.write(db_path, "vehicles.db")
-        if os.path.exists(Config.SETTINGS_FILE):
-            zf.write(Config.SETTINGS_FILE, "settings.json")
+
+    # Create a consistent snapshot using SQLite backup API
+    tmp_db = backup_path + ".tmpdb"
+    try:
+        src_conn = sqlite3.connect(db_path)
+        dst_conn = sqlite3.connect(tmp_db)
+        with dst_conn:
+            src_conn.backup(dst_conn)
+        src_conn.close()
+        dst_conn.close()
+
+        with zipfile.ZipFile(backup_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.write(tmp_db, "vehicles.db")
+            if os.path.exists(Config.SETTINGS_FILE):
+                zf.write(Config.SETTINGS_FILE, "settings.json")
+    finally:
+        if os.path.exists(tmp_db):
+            os.remove(tmp_db)
     return backup_name, backup_path
+
+
+def _restore_db_safely(src_path, dst_path):
+    """Restore database using SQLite backup API to avoid corruption."""
+    src_conn = sqlite3.connect(src_path)
+    dst_conn = sqlite3.connect(dst_path)
+    try:
+        with dst_conn:
+            src_conn.backup(dst_conn)
+    finally:
+        src_conn.close()
+        dst_conn.close()
 
 
 def restore_backup(backup_path, db_path):
@@ -36,7 +64,7 @@ def restore_backup(backup_path, db_path):
             try:
                 with zf.open("vehicles.db") as src, open(tmp_db, "wb") as out:
                     shutil.copyfileobj(src, out)
-                shutil.copy2(tmp_db, db_path)
+                _restore_db_safely(tmp_db, db_path)
             finally:
                 if os.path.exists(tmp_db):
                     os.remove(tmp_db)
@@ -57,8 +85,8 @@ def restore_backup(backup_path, db_path):
         return {"ok": True, "kind": "db_only",
                 "message": "Database restored (archive contained no settings.json)."}
 
-    # Legacy plain .db backup: database only
-    shutil.copy2(backup_path, db_path)
+    # Legacy plain .db backup: database only - use safe restore
+    _restore_db_safely(backup_path, db_path)
     return {"ok": True, "kind": "db_only",
             "message": "Database restored (legacy backup, settings kept as-is)."}
 

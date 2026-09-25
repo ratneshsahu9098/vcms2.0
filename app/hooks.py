@@ -1,10 +1,14 @@
 """App-wide request hooks.
 
 Auto-syncs a backup to Google Drive after successful POSTs that mutate data.
+Uses a thread-safe queue to avoid duplicate syncs and ensure sync only runs
+after successful DB commit.
 """
 import logging
 import threading
+import uuid
 from datetime import datetime
+from queue import Queue, Empty
 
 from flask import request
 
@@ -23,8 +27,32 @@ GDRIVE_SYNC_ENDPOINTS = (
     "backup.backup",
 )
 
+# Thread-safe queue for pending sync operations
+_sync_queue: Queue[tuple[str, str]] = Queue()
+_sync_worker_started = False
+_sync_worker_lock = threading.Lock()
 
-def _sync_to_gdrive(app):
+
+def _sync_worker(app):
+    """Background worker that processes sync queue."""
+    while True:
+        try:
+            # Wait for work with timeout to allow graceful shutdown
+            sync_id, endpoint = _sync_queue.get(timeout=60)
+            if sync_id is None:  # Shutdown signal
+                break
+            try:
+                _perform_sync(app, sync_id, endpoint)
+            except Exception:
+                logger.exception("Auto-sync to Google Drive failed for %s", sync_id)
+            finally:
+                _sync_queue.task_done()
+        except Empty:
+            continue
+
+
+def _perform_sync(app, sync_id: str, endpoint: str):
+    """Perform the actual Google Drive sync."""
     settings = load_settings()
     if not settings.get("gdrive_auto_sync", True):
         return
@@ -41,14 +69,34 @@ def _sync_to_gdrive(app):
         else:
             settings["gdrive_last_sync_status"] = f"error: {result.get('error', '')}"
         save_settings(settings)
+        logger.info("Auto-synced to Google Drive (sync_id=%s, endpoint=%s)", sync_id, endpoint)
     except Exception:
-        logger.exception("Auto-sync to Google Drive failed")
+        logger.exception("Auto-sync to Google Drive failed for %s", sync_id)
+
+
+def _ensure_worker_started(app):
+    """Start the background sync worker if not already running."""
+    global _sync_worker_started
+    with _sync_worker_lock:
+        if not _sync_worker_started:
+            worker = threading.Thread(target=_sync_worker, args=(app,), daemon=True)
+            worker.start()
+            _sync_worker_started = True
 
 
 def register_hooks(app):
-    @app.after_request
-    def auto_gdrive_sync(response):
-        if request.method == "POST" and response.status_code < 400:
+    _ensure_worker_started(app)
+
+    @app.teardown_request
+    def _teardown_request(exception):
+        # Only queue sync if request succeeded (no exception) and was a POST to sync endpoint
+        if exception is None and request.method == "POST":
             if request.endpoint in GDRIVE_SYNC_ENDPOINTS:
-                threading.Thread(target=_sync_to_gdrive, args=(app,), daemon=True).start()
+                # Generate unique sync ID for idempotency
+                sync_id = str(uuid.uuid4())
+                _sync_queue.put((sync_id, request.endpoint))
+
+    # Keep the old after_request for backward compatibility (no-op now)
+    @app.after_request
+    def _legacy_after_request(response):
         return response

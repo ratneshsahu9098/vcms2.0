@@ -192,6 +192,22 @@ def _plan_import(rows, duplicate_action):
         existing = Vehicle.query.filter(
             db.or_(Vehicle.vehicle_number == vnum, Vehicle.chassis_number == chassis)
         ).first()
+        # Verify the match is correct: both fields must match if both are present on existing
+        if existing:
+            existing_vnum = (existing.vehicle_number or "").strip().upper()
+            existing_chassis = (existing.chassis_number or "").strip().upper()
+            # If both vnum and chassis match existing, it's a true match
+            # If only one matches, be conservative and treat as potential conflict
+            vnum_match = existing_vnum == vnum
+            chassis_match = existing_chassis == chassis
+            if vnum_match and chassis_match:
+                pass  # True match
+            elif vnum_match != chassis_match:
+                # Only one field matches - this is ambiguous, treat as error
+                plan.append({"row": row_no, "data": data, "action": "error",
+                             "reason": f"Ambiguous match: vehicle_number or chassis_number matches different vehicle ({existing.vehicle_number})",
+                             "existing": None})
+                continue
         if existing is None:
             plan.append({"row": row_no, "data": data, "action": "add",
                          "reason": "", "existing": None})
@@ -232,6 +248,8 @@ def _vehicle_from_data(data):
         fitness_expiry=parse_date(data.get("fitness_expiry")),
         permit_from=parse_date(data.get("permit_from")),
         permit_expiry=parse_date(data.get("permit_expiry")),
+        permit_auth_no=text("permit_auth_no"),
+        permit_address=text("permit_address"),
         tax_from=parse_date(data.get("tax_from")),
         tax_expiry=parse_date(data.get("tax_expiry")),
         tax_mode=text("tax_mode"),

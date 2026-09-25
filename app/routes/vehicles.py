@@ -170,14 +170,20 @@ EXPIRY_FIELDS = ["puc_expiry", "fitness_expiry", "permit_expiry", "tax_expiry",
 
 
 def _expiry_status(form):
-    """Per-field expiry status badges for the edit form (live-updated by JS)."""
+    """Per-field expiry status badges for the edit form (live-updated by JS).
+    Returns dict with status info and a list of fields with invalid date formats.
+    """
     out = {}
+    invalid_dates = []
     for f in EXPIRY_FIELDS:
-        val = parse_date(form.get(f))
+        raw_val = form.get(f, "")
+        val = parse_date(raw_val)
+        if raw_val and val is None:
+            invalid_dates.append(f)
         label, css = Vehicle.status_for(val)
         out[f] = {"label": label, "class": css,
                   "days": (val - date.today()).days if val else None}
-    return out
+    return out, invalid_dates
 
 
 @bp.route("/vehicles/<int:vehicle_id>/edit", methods=["GET", "POST"])
@@ -187,12 +193,15 @@ def edit_vehicle(vehicle_id):
 
     if request.method == "POST":
         errors = validate_vehicle_form(request.form, editing_id=vehicle_id)
+        expiry_status, invalid_dates = _expiry_status(request.form)
+        for field in invalid_dates:
+            errors.append(f"Invalid date format for {field.replace('_', ' ').title()}.")
         if errors:
             for e in errors:
                 flash(e, "error")
             districts = [r[0] for r in db.session.query(Vehicle.district).distinct() if r[0]]
             return render_template("edit_vehicle.html", vehicle=vehicle, form=request.form,
-                                   districts=districts, expiry_status=_expiry_status(request.form))
+                                   districts=districts, expiry_status=expiry_status)
 
         vehicle.vehicle_number = request.form["vehicle_number"].strip().upper()
         vehicle.chassis_number = request.form["chassis_number"].strip().upper()
@@ -228,8 +237,9 @@ def edit_vehicle(vehicle_id):
 
     districts = [r[0] for r in db.session.query(Vehicle.district).distinct() if r[0]]
     form = vehicle.to_dict()
+    expiry_status, _ = _expiry_status(form)
     return render_template("edit_vehicle.html", vehicle=vehicle, form=form,
-                           districts=districts, expiry_status=_expiry_status(form))
+                           districts=districts, expiry_status=expiry_status)
 
 @bp.route("/vehicles/delete-all", methods=["POST"])
 @login_required

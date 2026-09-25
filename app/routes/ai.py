@@ -166,7 +166,12 @@ def ai_parse_document():
             import os
             import pytesseract
             from PIL import Image
-            tesseract_path = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+            tesseract_path = os.environ.get("TESSERACT_CMD")
+            if not tesseract_path:
+                if os.name == "nt":
+                    tesseract_path = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+                else:
+                    tesseract_path = "/usr/bin/tesseract"
             if os.path.exists(tesseract_path):
                 pytesseract.pytesseract.tesseract_cmd = tesseract_path
             if (file.filename or "").lower().endswith(".pdf"):
@@ -351,7 +356,9 @@ def _generated_label(iso_value):
     if not iso_value:
         return None
     try:
-        return datetime.fromisoformat(iso_value).strftime("%d %b %Y, %I:%M %p")
+        dt = datetime.fromisoformat(iso_value)
+        # Indian format: DD-MM-YYYY HH:MM AM/PM IST
+        return dt.strftime("%d-%m-%Y %I:%M %p IST")
     except ValueError:
         return None
 

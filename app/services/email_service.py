@@ -79,11 +79,12 @@ def send_email(to_email, subject, html_body):
     recipients = [r for r in recipients if r]
     if not recipients:
         return {"ok": False, "error": "No recipient email address."}
-    logger.info(f"send_email to={recipients}: smtp_configured={_is_smtp_configured()}")
+    logger.info(f"send_email to={len(recipients)} recipient(s): smtp_configured={_is_smtp_configured()}")
     if not _is_smtp_configured():
         return {"ok": False, "error": "SMTP not configured. Set email settings in Settings."}
     result = send_email_via_smtp(recipients, subject, html_body)
-    logger.info(f"SMTP result: {result}")
+    log_result = {k: v for k, v in result.items() if k not in ("recipients", "sent", "failed")}
+    logger.info(f"SMTP result: {log_result}")
     return result
 
 

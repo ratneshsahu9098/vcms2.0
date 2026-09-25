@@ -556,7 +556,52 @@ def parse_document_text(ocr_text):
         if response.endswith("```"):
             response = response[:-3]
         response = response.strip()
-    return json.loads(response)
+    data = json.loads(response)
+    # Validate required fields with defaults
+    required_fields = {
+        "vehicle_number": str,
+        "chassis_number": str,
+        "engine_number": str,
+        "owner_name": str,
+        "registration_date": (str, type(None)),
+        "puc_expiry": (str, type(None)),
+        "fitness_expiry": (str, type(None)),
+        "permit_from": (str, type(None)),
+        "permit_expiry": (str, type(None)),
+        "permit_auth_no": (str, type(None)),
+        "permit_address": (str, type(None)),
+        "insurance_expiry": (str, type(None)),
+        "insurance_company": (str, type(None)),
+        "policy_number": (str, type(None)),
+        "vehicle_type": (str, type(None)),
+        "tax_from": (str, type(None)),
+        "tax_expiry": (str, type(None)),
+        "tax_mode": (str, type(None)),
+        "tax_amount": (int, float, type(None)),
+        "document_type": str,
+    }
+    validated = {}
+    for field, expected_type in required_fields.items():
+        value = data.get(field)
+        if value is None:
+            validated[field] = None
+        elif isinstance(expected_type, tuple):
+            if not isinstance(value, expected_type):
+                validated[field] = None
+            else:
+                validated[field] = value
+        elif not isinstance(value, expected_type):
+            # Try to coerce
+            try:
+                validated[field] = expected_type(value)
+            except (ValueError, TypeError):
+                validated[field] = None
+        else:
+            validated[field] = value
+    # Ensure document_type has a valid value
+    if validated["document_type"] not in ("RC", "Insurance", "PUC", "Fitness", "Tax Receipt", "Unknown"):
+        validated["document_type"] = "Unknown"
+    return validated
 
 
 # ---------------------------------------------------------------------------
@@ -602,4 +647,23 @@ def generate_insights(vehicles):
         if response.endswith("```"):
             response = response[:-3]
         response = response.strip()
-    return json.loads(response)
+    data = json.loads(response)
+    # Validate required structure
+    validated = {
+        "risk_summary": str(data.get("risk_summary", "No risk summary available.")),
+        "top_issues": [str(x) for x in (data.get("top_issues") or []) if isinstance(x, str)][:5],
+        "recommendations": [str(x) for x in (data.get("recommendations") or []) if isinstance(x, str)][:5],
+        "monthly_outlook": str(data.get("monthly_outlook", "Outlook unavailable.")),
+    }
+    # Validate vehicle_risks
+    vehicle_risks = []
+    for vr in (data.get("vehicle_risks") or [])[:10]:
+        if isinstance(vr, dict):
+            vehicle_risks.append({
+                "vehicle": str(vr.get("vehicle", "")),
+                "owner": str(vr.get("owner", "")),
+                "risk_level": vr.get("risk_level") if vr.get("risk_level") in ("high", "medium", "low") else "medium",
+                "reason": str(vr.get("reason", "")),
+            })
+    validated["vehicle_risks"] = vehicle_risks
+    return validated
