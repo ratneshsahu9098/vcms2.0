@@ -13,11 +13,11 @@
 </div>
 
 {% elif not insights %}
-<div class="panel" style="text-align:center; padding:60px 20px;">
-  <i class="fa-solid fa-brain" style="font-size:3rem; color:var(--blue); margin-bottom:16px;"></i>
-  <h3 style="color:var(--text);">Generate Fleet Insights</h3>
-  <p style="color:var(--text-muted); margin:10px 0 20px;">AI will analyze your fleet data and provide compliance insights, risk scores, and recommendations.</p>
-  <a href="{{ url_for('ai.ai_insights') }}" class="btn btn-primary btn-lg">
+<div class="panel ai-gen-panel">
+  <i class="fa-solid fa-brain ai-gen-icon"></i>
+  <h3>Generate Fleet Insights</h3>
+  <p>AI will analyze your fleet data and provide compliance insights, risk scores, and recommendations.</p>
+  <a href="{{ url_for('ai.ai_insights', refresh=1) }}" class="btn btn-primary btn-lg" data-gen>
     <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Insights
   </a>
 </div>
@@ -25,9 +25,14 @@
 {% else %}
 
 <div class="detail-card" style="margin-bottom:20px;">
-  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-    <h3 style="color:var(--text); margin:0;"><i class="fa-solid fa-brain" style="color:var(--blue);"></i> Fleet Compliance Analysis</h3>
-    <a href="{{ url_for('ai.ai_insights') }}" class="btn btn-outline-secondary btn-sm">
+  <div class="insight-head">
+    <div>
+      <h3><i class="fa-solid fa-brain" style="color:var(--blue);"></i> Fleet Compliance Analysis</h3>
+      {% if generated_at %}
+      <span class="insight-stamp"><i class="fa-regular fa-clock"></i> Generated {{ generated_at }}</span>
+      {% endif %}
+    </div>
+    <a href="{{ url_for('ai.ai_insights', refresh=1) }}" class="btn btn-outline-secondary btn-sm" data-gen>
       <i class="fa-solid fa-rotate"></i> Regenerate
     </a>
   </div>
@@ -108,10 +113,53 @@
 {% endif %}
 
 <style>
+  .ai-gen-panel { text-align: center; padding: 60px 20px; }
+  .ai-gen-icon { font-size: 3rem; color: var(--blue); margin-bottom: 16px; }
+  .ai-gen-panel h3 { color: var(--text); margin: 0; }
+  .ai-gen-panel p { color: var(--text-muted); margin: 10px 0 20px; }
+
+  .insight-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+  .insight-head h3 { color: var(--text); margin: 0; font-size: 1.05rem; }
+  .insight-stamp { display: block; font-size: .78rem; color: var(--text-muted); margin-top: 4px; }
+
+  .gen-overlay {
+    position: fixed; inset: 0; z-index: 200; display: none;
+    background: rgba(10, 14, 20, .82); backdrop-filter: blur(3px);
+    align-items: center; justify-content: center; flex-direction: column; gap: 16px;
+    text-align: center; padding: 20px;
+  }
+  .gen-overlay.show { display: flex; }
+  .gen-overlay i { font-size: 2.4rem; color: var(--blue); }
+  .gen-overlay .spin { animation: genSpin 1s linear infinite; }
+  @keyframes genSpin { to { transform: rotate(360deg); } }
+  .gen-overlay h4 { color: #fff; margin: 0; }
+  .gen-overlay p { color: #aab4c0; margin: 0; font-size: .88rem; }
+
   .insight-section { margin-top:20px; padding-top:16px; border-top:1px solid var(--border); }
   .insight-title { font-size:0.95rem; font-weight:700; color:var(--text); margin:0 0 10px; display:flex; align-items:center; gap:8px; }
   .insight-list { margin:0; padding-left:20px; }
   .insight-list li { color:var(--text); margin-bottom:8px; line-height:1.6; font-size:0.9rem; }
   .insight-recommendations li { color:var(--green); }
 </style>
+
+<div class="gen-overlay" id="genOverlay">
+  <i class="fa-solid fa-brain spin"></i>
+  <h4>Analyzing your fleet…</h4>
+  <p>AI is reviewing compliance data — this can take a few seconds.</p>
+</div>
+
+<script>
+  (function () {
+    var overlay = document.getElementById('genOverlay');
+    document.querySelectorAll('[data-gen]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        if (overlay) overlay.classList.add('show');
+      });
+    });
+    /* hide immediately when restored from bfcache */
+    window.addEventListener('pageshow', function () {
+      if (overlay) overlay.classList.remove('show');
+    });
+  })();
+</script>
 {% endblock %}

@@ -77,6 +77,11 @@
         <span class="field-hint">Pollution Under Control certificate</span>
       </div>
       <div class="form-group">
+        <label>PUC Certificate Number</label>
+        <input type="text" name="pollution_certificate_number" class="form-control" value="{{ form.get('pollution_certificate_number','') }}">
+        <span class="field-hint">Number printed on the certificate</span>
+      </div>
+      <div class="form-group">
         <label>Fitness Expiry</label>
         <input type="date" name="fitness_expiry" class="form-control" value="{{ form.get('fitness_expiry','') }}">
         <span class="field-hint">Fitness certificate validity</span>
@@ -157,10 +162,6 @@
       <div class="form-group">
         <label>Policy Number</label>
         <input type="text" name="policy_number" class="form-control" value="{{ form.get('policy_number','') }}">
-      </div>
-      <div class="form-group">
-        <label>Pollution Certificate Number</label>
-        <input type="text" name="pollution_certificate_number" class="form-control" value="{{ form.get('pollution_certificate_number','') }}">
       </div>
     </div>
   </div>

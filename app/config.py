@@ -20,6 +20,9 @@ class Config:
     EXPORT_FOLDER = os.path.join(DATA_DIR, "exports")
     BACKUP_FOLDER = os.path.join(DATA_DIR, "backups")
     SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
+    IMPORT_CACHE_DIR = os.path.join(DATA_DIR, "import_cache")
+    IMPORT_MAX_MB = 5
+    INSIGHTS_CACHE = os.path.join(DATA_DIR, "insights_cache.json")
     ALLOWED_IMPORT_EXTENSIONS = {"xlsx", "xls", "csv", "json"}
 
     # Single-user login credentials (change in production / move to env vars)

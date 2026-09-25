@@ -5,7 +5,13 @@
 {% block content %}
 <form method="GET" class="filter-bar">
   <input type="text" name="q" value="{{ filters.get('q','') }}" class="form-control search-input"
-         placeholder="Search by vehicle no, chassis, engine, owner, phone, policy...">
+         placeholder="Search by vehicle no, chassis, engine, owner, phone, email, policy...">
+
+  <input type="text" name="mobile" value="{{ filters.get('mobile','') }}" class="form-control contact-input"
+         placeholder="Mobile number" pattern="[0-9]{0,10}" inputmode="numeric" title="Filter by mobile number">
+
+  <input type="email" name="email" value="{{ filters.get('email','') }}" class="form-control contact-input"
+         placeholder="Email id" title="Filter by email id">
 
   <select name="status" class="form-select">
     <option value="">All Status</option>

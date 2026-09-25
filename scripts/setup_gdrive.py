@@ -9,6 +9,7 @@ Steps:
 4. Browser opens → login with Google → done!
 """
 
+import json
 import os
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -46,6 +47,40 @@ def check_client_secret():
         print("9. Place it in:", DATA_DIR)
         print()
         print("Then run this script again: python scripts/setup_gdrive.py")
+        print("=" * 60)
+        return False
+
+    try:
+        with open(CLIENT_SECRET, encoding="utf-8") as fh:
+            cfg = json.load(fh)
+    except ValueError:
+        print("=" * 60)
+        print("ERROR: client_secret.json is not valid JSON.")
+        print("Re-download the OAuth client file and replace it in:", DATA_DIR)
+        print("=" * 60)
+        return False
+
+    if "installed" not in cfg:
+        print("=" * 60)
+        if cfg.get("type") == "service_account":
+            print("ERROR: client_secret.json is a SERVICE ACCOUNT key,")
+            print("not an OAuth client! Browser login needs an OAuth 'Desktop app' client.")
+            print("Download your service-account key for server use somewhere private")
+            print("(or delete it if unused), then create the right file:")
+            print("  1. https://console.cloud.google.com/apis/credentials")
+            print("  2. Create Credentials > OAuth client ID")
+            print("  3. Application type: Desktop app > Create")
+            print("  4. Download the JSON, rename to client_secret.json, replace in:")
+            print("     " + DATA_DIR)
+        elif "web" in cfg:
+            print("ERROR: client_secret.json is a WEB application OAuth client.")
+            print("Create the OAuth client with Application type: Desktop app,")
+            print("re-download, rename to client_secret.json and replace the file in:")
+            print("     " + DATA_DIR)
+        else:
+            print("ERROR: client_secret.json is not an OAuth client file")
+            print("(expected a top-level 'installed' key). Download the OAuth client")
+            print("ID JSON from https://console.cloud.google.com/apis/credentials")
         print("=" * 60)
         return False
     return True
@@ -102,15 +137,30 @@ def setup():
     print("Token saved to:", TOKEN_FILE)
     print()
 
-    # Test connection
+    # Test connection and store the linked account in app settings
+    email = ""
     try:
         from googleapiclient.discovery import build
         service = build("drive", "v3", credentials=creds)
         about = service.about().get(fields="user(emailAddress)").execute()
-        email = about.get("user", {}).get("emailAddress", "unknown")
-        print(f"Connected as: {email}")
+        email = about.get("user", {}).get("emailAddress") or ""
+        print(f"Connected as: {email or 'unknown'}")
     except Exception:
         print("Connection verified.")
+
+    settings_path = os.path.join(DATA_DIR, "settings.json")
+    try:
+        cfg = {}
+        if os.path.exists(settings_path):
+            with open(settings_path, encoding="utf-8") as fh:
+                cfg = json.load(fh)
+        cfg["gdrive_user_email"] = email
+        with open(settings_path, "w", encoding="utf-8") as fh:
+            json.dump(cfg, fh, indent=2)
+        print("Linked account saved - VCMS Settings will show it.")
+    except Exception:
+        print("Note: could not update settings.json; open VCMS Settings once")
+        print("and the linked account will be filled in automatically.")
 
     print()
     print("Now go to VCMS Settings and enable 'Auto-sync on every vehicle change'")

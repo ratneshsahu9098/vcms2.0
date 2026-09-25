@@ -54,9 +54,15 @@ def settings():
         flash("Settings saved successfully.", "success")
         return redirect(url_for("settings.settings"))
 
-    from app.utils import load_settings
+    from app.utils import load_settings, save_settings
     ai_settings = load_settings()
-    ai_settings["gdrive_connected"] = google_drive.is_connected()
+    connected = google_drive.is_connected()
+    if connected and not ai_settings.get("gdrive_user_email"):
+        email = google_drive.get_user_email()
+        if email:
+            ai_settings["gdrive_user_email"] = email
+            save_settings(ai_settings)
+    ai_settings["gdrive_connected"] = connected
     return render_template("settings.html", ai_settings=ai_settings)
 
 def _save_ai_form_settings(apply_provider=False):

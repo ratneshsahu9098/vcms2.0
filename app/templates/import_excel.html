@@ -1,46 +1,337 @@
 {% extends "layout.html" %}
-{% block title %}Import Excel{% endblock %}
-{% block page_title %}Import Excel{% endblock %}
+{% block title %}Import Vehicles{% endblock %}
+{% block page_title %}Import Vehicles{% endblock %}
 
 {% block content %}
-<div class="panel">
-  <h3 class="panel-title"><i class="fa-solid fa-file-import"></i> Upload Vehicle Data</h3>
-  <p class="text-muted">
-    Supported columns: Vehicle Number, Chassis Number, Owner Name, Phone, PUC, Fitness, Permit, Tax, Insurance.
-    Accepted formats: .xlsx, .xls, .csv, .json
-  </p>
+{% set active_idx = [0, 2, 4][step] %}
+<style>
+  .import-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 4px; }
+  .import-head .panel-title { margin-bottom: 0; }
 
-  <form method="POST" enctype="multipart/form-data" class="import-form">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="file" name="file" accept=".xlsx,.xls,.csv,.json" class="form-control" required>
-    <select name="duplicate_action" class="form-select" style="max-width:220px;">
-      <option value="skip">Skip Duplicates</option>
-      <option value="update">Update Existing Records</option>
-    </select>
-    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-upload"></i> Upload &amp; Import</button>
-  </form>
+  .import-steps .step.done { background: rgba(34, 197, 94, .14); color: var(--green); font-weight: 600; }
+  .import-steps .step.done i { font-size: .72em; margin-right: 2px; }
 
-  <div class="import-steps">
-    <span class="step active">Upload</span>
-    <i class="fa-solid fa-arrow-right"></i>
-    <span class="step">Validate</span>
-    <i class="fa-solid fa-arrow-right"></i>
-    <span class="step">Preview</span>
-    <i class="fa-solid fa-arrow-right"></i>
-    <span class="step">Import</span>
-    <i class="fa-solid fa-arrow-right"></i>
-    <span class="step">Summary</span>
+  .drop-zone {
+    position: relative; border: 2px dashed var(--border); border-radius: 12px;
+    padding: 34px 20px; text-align: center; background: var(--charcoal-light);
+    cursor: pointer; transition: border-color .15s, background .15s;
+  }
+  .drop-zone:hover, .drop-zone.dragover { border-color: var(--blue); background: var(--active-bg); }
+  .drop-zone input[type="file"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+  .drop-icon { display: block; font-size: 2.2rem; color: var(--blue); margin-bottom: 6px; }
+  .drop-main { margin: 4px 0; }
+  .drop-hint { margin: 0; font-size: .8rem; color: var(--text-muted); }
+  .drop-name { display: block; margin-top: 10px; font-size: .85rem; font-weight: 600; color: var(--blue); }
+  .drop-name.bad { color: var(--red); }
+  .drop-name:empty { display: none; }
+
+  .import-controls { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; margin-top: 16px; }
+  .dup-field { display: flex; flex-direction: column; gap: 6px; font-size: .85rem; color: var(--text-muted); min-width: 250px; }
+  .dup-field .form-select { min-width: 250px; }
+
+  .import-info { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 18px; }
+  .info-card { background: var(--charcoal-light); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .info-card h5 { margin: 0 0 6px; font-size: .85rem; color: var(--text); }
+  .info-card h5 i { color: var(--blue); margin-right: 6px; }
+  .info-card p { margin: 0; font-size: .8rem; color: var(--text-muted); line-height: 1.5; }
+
+  .preview-file {
+    display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+    background: var(--charcoal-light); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 14px; margin-bottom: 4px; font-size: .85rem;
+  }
+  .pf-name { font-weight: 700; color: var(--text); }
+  .pf-name i { color: var(--blue); margin-right: 6px; }
+  .pf-meta { color: var(--text-muted); }
+  .pf-note { margin-left: auto; color: var(--orange); font-weight: 700; }
+
+  .import-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin: 14px 0; }
+  .istat { border: 1px solid var(--border); background: var(--charcoal-light); border-radius: 10px; padding: 12px 8px; text-align: center; }
+  .istat-num { display: block; font-size: 1.45rem; font-weight: 800; }
+  .istat-lbl { font-size: .74rem; color: var(--text-muted); }
+  .istat-lbl i { margin-right: 4px; }
+  .st-add .istat-num { color: var(--green); }
+  .st-update .istat-num { color: var(--blue); }
+  .st-skip .istat-num { color: var(--text-muted); }
+  .st-error .istat-num { color: var(--red); }
+
+  .map-block h5 { font-size: .85rem; margin: 12px 0 8px; color: var(--text); }
+  .map-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .map-chip { font-size: .75rem; padding: 4px 9px; border-radius: 8px; border: 1px solid var(--border); background: var(--charcoal-light); color: var(--text-muted); }
+  .map-chip i { font-size: .72em; }
+  .chip-ok { color: var(--text); }
+  .chip-ok i { color: var(--green); }
+  .chip-none { opacity: .7; }
+  .chip-none i { color: var(--red); }
+
+  .preview-wrap { margin-top: 14px; }
+  .act-badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: .72rem; font-weight: 700; }
+  .act-add { background: rgba(34, 197, 94, .16); color: var(--green); }
+  .act-update { background: rgba(59, 130, 246, .16); color: var(--blue); }
+  .act-skip { background: rgba(148, 163, 184, .16); color: var(--text-muted); }
+  .act-error { background: rgba(239, 68, 68, .16); color: var(--red); }
+  td.p-num { font-family: monospace; text-transform: uppercase; }
+  td.p-notes { color: var(--text-muted); font-size: .8rem; }
+  .row-error td.p-notes { color: var(--red); font-weight: 600; }
+  .preview-more { font-size: .8rem; color: var(--text-muted); margin-top: 8px; }
+
+  .done-block {
+    display: flex; gap: 14px; align-items: center;
+    background: var(--charcoal-light); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px; margin-bottom: 6px;
+  }
+  .done-icon { font-size: 2.1rem; color: var(--green); }
+  .done-block h4 { margin: 0 0 4px; font-size: 1.05rem; color: var(--text); }
+  .done-block p { margin: 0; color: var(--text-muted); font-size: .85rem; }
+</style>
+
+<div class="panel import-panel">
+  <div class="import-head">
+    <h3 class="panel-title">
+      <i class="fa-solid fa-file-import"></i>
+      {% if step == 2 %}Import Summary{% elif step == 1 %}Preview Import{% else %}Upload Vehicle Data{% endif %}
+    </h3>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('data.import_excel', download='template') }}">
+      <i class="fa-solid fa-file-csv"></i> Sample Template
+    </a>
   </div>
 
-  {% if import_errors %}
+  <div class="import-steps">
+    {% for s in ['Upload', 'Validate', 'Preview', 'Import', 'Summary'] %}
+      {% if not loop.first %}<i class="fa-solid fa-arrow-right"></i>{% endif %}
+      <span class="step {{ 'done' if loop.index0 < active_idx else 'active' }}">
+        {% if loop.index0 < active_idx %}<i class="fa-solid fa-check"></i>{% endif %}{{ s }}
+      </span>
+    {% endfor %}
+  </div>
+
+  {% if step == 0 %}
+  <form method="POST" enctype="multipart/form-data" class="import-upload" id="importForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="phase" value="preview">
+
+    <div class="drop-zone" id="dropZone">
+      <i class="fa-solid fa-cloud-arrow-up drop-icon"></i>
+      <p class="drop-main"><strong>Drag &amp; drop your file here</strong> or click to browse</p>
+      <p class="drop-hint">.xlsx, .xls, .csv, .json · up to 5 MB</p>
+      <input type="file" name="file" id="fileInput" accept=".xlsx,.xls,.csv,.json" required>
+      <span class="drop-name" id="fileName"></span>
+    </div>
+
+    <div class="import-controls">
+      <label class="dup-field">
+        <span>When a vehicle already exists</span>
+        <select name="duplicate_action" class="form-select">
+          <option value="skip">Skip it (keep current data)</option>
+          <option value="update">Update it with file data</option>
+        </select>
+      </label>
+      <button type="submit" class="btn btn-primary" id="uploadBtn" disabled>
+        <i class="fa-solid fa-magnifying-glass"></i> Upload &amp; Preview
+      </button>
+    </div>
+  </form>
+
+  <div class="import-info">
+    <div class="info-card">
+      <h5><i class="fa-solid fa-list-check"></i> Required columns</h5>
+      <p>Vehicle Number, Chassis Number, Owner Name, Phone. All other columns are optional.</p>
+    </div>
+    <div class="info-card">
+      <h5><i class="fa-solid fa-eye"></i> Preview first</h5>
+      <p>Nothing is saved until you review the preview and confirm the import.</p>
+    </div>
+    <div class="info-card">
+      <h5><i class="fa-solid fa-link"></i> Flexible headers</h5>
+      <p>Common header names like "Phone", "Mobile Number", "PUC" or "Tax" are matched automatically.</p>
+    </div>
+  </div>
+
+  {% elif step == 1 %}
+  <div class="preview-file">
+    <span class="pf-name"><i class="fa-solid fa-file-lines"></i> {{ filename }}</span>
+    <span class="pf-meta">{{ stats.total }} row{{ 's' if stats.total != 1 }} · Duplicates:
+      <strong>{{ 'Update' if duplicate_action == 'update' else 'Skip' }}</strong></span>
+    <span class="pf-note"><i class="fa-solid fa-circle-exclamation"></i> Nothing has been saved yet</span>
+  </div>
+
+  <div class="import-stats">
+    <div class="istat st-add"><span class="istat-num">{{ stats.add }}</span><span class="istat-lbl"><i class="fa-solid fa-plus"></i> New</span></div>
+    <div class="istat st-update"><span class="istat-num">{{ stats['update'] }}</span><span class="istat-lbl"><i class="fa-solid fa-pen"></i> Update</span></div>
+    <div class="istat st-skip"><span class="istat-num">{{ stats.skip }}</span><span class="istat-lbl"><i class="fa-solid fa-forward"></i> Skip</span></div>
+    <div class="istat st-error"><span class="istat-num">{{ stats.error }}</span><span class="istat-lbl"><i class="fa-solid fa-triangle-exclamation"></i> Errors</span></div>
+    <div class="istat st-total"><span class="istat-num">{{ stats.total }}</span><span class="istat-lbl">Total Rows</span></div>
+  </div>
+
+  {% if column_map %}
+  <div class="map-block">
+    <h5><i class="fa-solid fa-table-columns"></i> Column mapping</h5>
+    <div class="map-chips">
+      {% for orig, mapped in column_map %}
+      <span class="map-chip {{ 'chip-ok' if mapped else 'chip-none' }}">
+        {{ orig }}
+        {% if mapped and mapped != orig %}
+          <i class="fa-solid fa-arrow-right"></i> {{ mapped|replace('_', ' ') }}
+        {% elif not mapped %}
+          <i class="fa-solid fa-ban" title="This column will not be imported"></i>
+        {% endif %}
+      </span>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <form method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="phase" value="commit">
+    <input type="hidden" name="token" value="{{ token }}">
+    <div class="form-actions">
+      {% set will_add = stats.add + stats['update'] %}
+      <button type="submit" class="btn btn-primary"
+              {% if duplicate_action == 'update' and stats['update'] > 0 %}
+              onclick="return confirm('Update {{ stats['update'] }} existing vehicle{{ 's' if stats['update'] != 1 }} with data from this file? Current values will be overwritten.');"
+              {% endif %}>
+        <i class="fa-solid fa-check"></i>
+        Import {{ will_add }} row{{ 's' if will_add != 1 }}{% if stats.skip %} · skip {{ stats.skip }}{% endif %}
+      </button>
+      <a href="{{ url_for('data.import_excel', cancel=token) }}" class="btn btn-outline-secondary">
+        <i class="fa-solid fa-arrow-left"></i> Back
+      </a>
+    </div>
+  </form>
+
+  {% if plan %}
+  <div class="table-wrap preview-wrap">
+    <table class="table-main">
+      <thead>
+        <tr><th>Row</th><th>Action</th><th>Vehicle No</th><th>Chassis</th><th>Owner</th><th>Phone</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        {% for p in plan[:preview_limit] %}
+        <tr class="{{ 'row-error' if p.action == 'error' }}">
+          <td>{{ p.row }}</td>
+          <td><span class="act-badge act-{{ p.action }}">{{ {'add': 'New', 'update': 'Update', 'skip': 'Skip', 'error': 'Error'}[p.action] }}</span></td>
+          <td class="p-num">{{ (p.data.get('vehicle_number') or '')|string|upper }}</td>
+          <td>{{ p.data.get('chassis_number') or '' }}</td>
+          <td>{{ p.data.get('owner_name') or '' }}</td>
+          <td>{{ p.data.get('mobile_number') or '' }}</td>
+          <td class="p-notes">{{ p.reason }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if plan|length > preview_limit %}
+  <p class="preview-more">…and {{ plan|length - preview_limit }} more rows — all rows will be processed.</p>
+  {% endif %}
+  {% endif %}
+
+  {% set err_rows = plan|selectattr('action', 'equalto', 'error')|list %}
+  {% if err_rows %}
   <div class="import-errors">
-    <h4>Rows skipped</h4>
+    <h4><i class="fa-solid fa-triangle-exclamation"></i> Rows that cannot be imported ({{ err_rows|length }})</h4>
     <ul>
-      {% for err in import_errors %}
-      <li>{{ err }}</li>
+      {% for p in err_rows[:50] %}
+      <li>Row {{ p.row }}: {{ p.reason }}</li>
       {% endfor %}
     </ul>
   </div>
   {% endif %}
+
+  {% elif step == 2 and result %}
+  <div class="done-block">
+    <i class="fa-solid fa-circle-check done-icon"></i>
+    <div>
+      <h4>Import complete</h4>
+      <p>{{ result.filename }} · {{ result.imported }} added, {{ result.updated }} updated, {{ result.skipped }} skipped</p>
+    </div>
+  </div>
+
+  <div class="import-stats">
+    <div class="istat st-add"><span class="istat-num">{{ result.imported }}</span><span class="istat-lbl"><i class="fa-solid fa-plus"></i> Added</span></div>
+    <div class="istat st-update"><span class="istat-num">{{ result.updated }}</span><span class="istat-lbl"><i class="fa-solid fa-pen"></i> Updated</span></div>
+    <div class="istat st-skip"><span class="istat-num">{{ result.skipped }}</span><span class="istat-lbl"><i class="fa-solid fa-forward"></i> Skipped</span></div>
+    <div class="istat st-error"><span class="istat-num">{{ result.error_total }}</span><span class="istat-lbl"><i class="fa-solid fa-triangle-exclamation"></i> Issues</span></div>
+    <div class="istat st-total"><span class="istat-num">{{ result.imported + result.updated + result.skipped }}</span><span class="istat-lbl">Total Rows</span></div>
+  </div>
+
+  {% if result.errors %}
+  <div class="import-errors">
+    <h4><i class="fa-solid fa-triangle-exclamation"></i> Rows skipped
+      ({{ result.error_total }}{% if result.error_total > result.errors|length %}, showing first {{ result.errors|length }}{% endif %})</h4>
+    <ul>
+      {% for e in result.errors %}
+      <li>Row {{ e.row }}: {{ e.reason }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <div class="form-actions">
+    <a href="{{ url_for('vehicles.vehicle_list') }}" class="btn btn-primary">
+      <i class="fa-solid fa-car-side"></i> View Vehicles
+    </a>
+    <a href="{{ url_for('data.import_excel') }}" class="btn btn-outline-secondary">
+      <i class="fa-solid fa-rotate-right"></i> Import Another File
+    </a>
+  </div>
+  {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var zone = document.getElementById('dropZone');
+  var input = document.getElementById('fileInput');
+  var nameEl = document.getElementById('fileName');
+  var btn = document.getElementById('uploadBtn');
+  var form = document.getElementById('importForm');
+  if (!zone || !input || !btn) return;
+
+  var OK = ['.xlsx', '.xls', '.csv', '.json'];
+
+  function show(file) {
+    if (!file) { nameEl.textContent = ''; btn.disabled = true; return; }
+    var ext = '.' + file.name.split('.').pop().toLowerCase();
+    if (OK.indexOf(ext) === -1) {
+      nameEl.textContent = 'Unsupported file type: ' + file.name;
+      nameEl.className = 'drop-name bad';
+      btn.disabled = true;
+      return;
+    }
+    nameEl.className = 'drop-name';
+    nameEl.textContent = file.name + ' · ' + Math.max(1, Math.round(file.size / 1024)) + ' KB';
+    btn.disabled = false;
+  }
+
+  ['dragenter', 'dragover'].forEach(function (ev) {
+    zone.addEventListener(ev, function (e) {
+      e.preventDefault(); e.stopPropagation();
+      zone.classList.add('dragover');
+    });
+  });
+  ['dragleave', 'drop'].forEach(function (ev) {
+    zone.addEventListener(ev, function (e) {
+      e.preventDefault(); e.stopPropagation();
+      zone.classList.remove('dragover');
+    });
+  });
+  zone.addEventListener('drop', function (e) {
+    var files = e.dataTransfer && e.dataTransfer.files;
+    if (files && files.length) {
+      try { input.files = files; } catch (err) { /* older browsers */ }
+      show(files[0]);
+    }
+  });
+  input.addEventListener('change', function () { show(input.files[0]); });
+
+  if (form) {
+    form.addEventListener('submit', function () {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Validating…';
+    });
+  }
+})();
+</script>
 {% endblock %}

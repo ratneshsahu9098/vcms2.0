@@ -1,8 +1,11 @@
 """AI chat assistant, document parser and insights."""
 from datetime import datetime
+import json
+import os
 
-from flask import (Blueprint, flash, redirect, render_template, request, url_for)
+from flask import (Blueprint, flash, jsonify, redirect, render_template, request, url_for)
 
+from app.config import Config
 from app.extensions import db
 from app.middleware import login_required
 from app.migrations import resequence_sr_nos
@@ -16,13 +19,48 @@ bp = Blueprint("ai", __name__)
 
 # ---- AI Chat Assistant --------------------------------------------------
 
+def _handle_message(user_msg, session_id=None):
+    """Persist the user message, ask AI, persist the reply.
+
+    Returns (chat_session, ai_reply). Shared by the classic form POST and
+    the AJAX /ai/chat/send endpoint.
+    """
+    if session_id:
+        chat_session = ChatSession.query.get_or_404(session_id)
+    else:
+        chat_session = ChatSession(title=user_msg[:80])
+        db.session.add(chat_session)
+        db.session.commit()
+
+    db.session.add(ChatMessage(session_id=chat_session.id, role="user", content=user_msg))
+    db.session.commit()
+
+    history = [{"role": m.role, "content": m.content} for m in chat_session.messages.all()]
+    vehicles = Vehicle.query.all()
+    try:
+        ai_reply = ai_service.ask_assistant(user_msg, vehicles, history=history)
+    except Exception as exc:
+        ai_reply = f"Error communicating with AI: {exc}"
+
+    db.session.add(ChatMessage(session_id=chat_session.id, role="assistant",
+                               content=ai_reply or "No response."))
+    chat_session.updated_at = datetime.utcnow()
+    db.session.commit()
+    return chat_session, ai_reply or "No response."
+
+
+def _chat_sessions(limit=20):
+    return ChatSession.query.order_by(ChatSession.updated_at.desc()).limit(limit).all()
+
+
 @bp.route("/ai/chat", methods=["GET", "POST"])
 @bp.route("/ai/chat/<int:session_id>", methods=["GET", "POST"])
 @login_required
 def ai_chat(session_id=None):
     if not ai_service.check_api_key():
         flash("API key not configured. Set it in Settings.", "error")
-        return render_template("ai_chat.html", messages=[], ai_enabled=False, chat_session=None)
+        return render_template("ai_chat.html", messages=[], ai_enabled=False,
+                               chat_session=None, sessions=[])
 
     if request.method == "POST":
         user_msg = request.form.get("message", "").strip()
@@ -31,38 +69,39 @@ def ai_chat(session_id=None):
             return redirect(url_for("ai.ai_chat"))
 
         sid = request.form.get("session_id")
-        if sid:
-            chat_session = ChatSession.query.get_or_404(int(sid))
-        else:
-            chat_session = ChatSession(title=user_msg[:80])
-            db.session.add(chat_session)
-            db.session.commit()
-
-        user_message = ChatMessage(session_id=chat_session.id, role="user", content=user_msg)
-        db.session.add(user_message)
-        db.session.commit()
-
-        history = [{"role": m.role, "content": m.content} for m in chat_session.messages.all()]
-        vehicles = Vehicle.query.all()
-        try:
-            ai_reply = ai_service.ask_assistant(user_msg, vehicles, history=history)
-        except Exception as exc:
-            ai_reply = f"Error communicating with AI: {exc}"
-
-        ai_message = ChatMessage(session_id=chat_session.id, role="assistant", content=ai_reply or "No response.")
-        db.session.add(ai_message)
-        chat_session.updated_at = datetime.utcnow()
-        db.session.commit()
-
+        chat_session, _reply = _handle_message(user_msg, int(sid) if sid else None)
         return redirect(url_for("ai.ai_chat", session_id=chat_session.id))
 
     chat_session = None
     messages = []
     if session_id:
         chat_session = ChatSession.query.get_or_404(session_id)
-        messages = [{"role": m.role, "content": m.content} for m in chat_session.messages.order_by(ChatMessage.id).all()]
+        messages = [{"role": m.role, "content": m.content}
+                    for m in chat_session.messages.order_by(ChatMessage.id).all()]
 
-    return render_template("ai_chat.html", messages=messages, ai_enabled=True, chat_session=chat_session)
+    return render_template("ai_chat.html", messages=messages, ai_enabled=True,
+                           chat_session=chat_session, sessions=_chat_sessions())
+
+
+@bp.route("/ai/chat/send", methods=["POST"])
+@login_required
+def ai_chat_send():
+    """AJAX send: same flow as the classic POST, but answers with JSON."""
+    if not ai_service.check_api_key():
+        return jsonify(ok=False, error="API key not configured. Set it in Settings."), 503
+
+    user_msg = request.form.get("message", "").strip()
+    if not user_msg:
+        return jsonify(ok=False, error="Please type a message."), 400
+
+    sid = request.form.get("session_id", type=int)
+    chat_session, reply = _handle_message(user_msg, sid)
+    return jsonify(
+        ok=True,
+        session_id=chat_session.id,
+        session_url=url_for("ai.ai_chat", session_id=chat_session.id),
+        reply=reply,
+    )
 
 @bp.route("/ai/chat/new")
 @login_required
@@ -287,19 +326,67 @@ def ai_parse_add_vehicle():
 
 # ---- AI Insights --------------------------------------------------------
 
+def _load_cached_insights():
+    try:
+        with open(Config.INSIGHTS_CACHE, encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, dict) and data.get("insights"):
+            return data
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def _save_cached_insights(insights):
+    try:
+        os.makedirs(os.path.dirname(Config.INSIGHTS_CACHE), exist_ok=True)
+        with open(Config.INSIGHTS_CACHE, "w", encoding="utf-8") as fh:
+            json.dump({"generated_at": datetime.utcnow().isoformat(),
+                       "insights": insights}, fh, default=str, ensure_ascii=False)
+    except OSError:
+        pass
+
+
+def _generated_label(iso_value):
+    if not iso_value:
+        return None
+    try:
+        return datetime.fromisoformat(iso_value).strftime("%d %b %Y, %I:%M %p")
+    except ValueError:
+        return None
+
+
+def _render_insights(insights, generated_at):
+    return render_template(
+        "ai_insights.html",
+        insights=insights,
+        ai_enabled=True,
+        generated_at=_generated_label(generated_at),
+    )
+
+
 @bp.route("/ai/insights")
 @login_required
 def ai_insights():
     if not ai_service.check_api_key():
         flash("AI API key not configured. Set it in Settings.", "error")
-        return render_template("ai_insights.html", insights=None, ai_enabled=False)
+        return render_template("ai_insights.html", insights=None, ai_enabled=False,
+                               generated_at=None)
+
+    cached = _load_cached_insights()
+    if cached and request.args.get("refresh") != "1":
+        return _render_insights(cached["insights"], cached.get("generated_at"))
 
     vehicles = Vehicle.query.all()
     try:
         insights = ai_service.generate_insights(vehicles)
     except Exception as exc:
         flash(f"Failed to generate insights: {exc}", "error")
-        return render_template("ai_insights.html", insights=None, ai_enabled=True)
+        if cached:
+            return _render_insights(cached["insights"], cached.get("generated_at"))
+        return render_template("ai_insights.html", insights=None, ai_enabled=True,
+                               generated_at=None)
 
-    return render_template("ai_insights.html", insights=insights, ai_enabled=True)
+    _save_cached_insights(insights)
+    return _render_insights(insights, datetime.utcnow().isoformat())
 

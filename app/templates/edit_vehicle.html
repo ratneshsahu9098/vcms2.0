@@ -3,11 +3,52 @@
 {% block page_title %}Edit Vehicle · {{ vehicle.vehicle_number }}{% endblock %}
 
 {% block content %}
+{% set ocls = vehicle.overall_status() %}
+{% set olbl = {'status-red':'Expired','status-orange':'Expiring Soon','status-yellow':'Expiring Soon','status-gray':'N/A','status-green':'Valid'}[ocls] %}
+
+{% macro expiry_input(name, label, hint) %}
+{% set st = expiry_status[name] %}
+{% set d = st.days %}
+<div class="form-group">
+  <label>{{ label }}</label>
+  <div class="date-row">
+    <input type="date" name="{{ name }}" class="form-control" value="{{ form.get(name,'') }}" data-expiry>
+    <span class="expiry-badge {{ st.class }}" data-badge="{{ name }}"
+          title="{% if d is not none %}{% if d < 0 %}{{ -d }} days overdue{% elif d == 0 %}expires today{% else %}{{ d }} days left{% endif %}{% endif %}">{{ st.label }}</span>
+  </div>
+  {% if hint %}<span class="field-hint">{{ hint }}</span>{% endif %}
+</div>
+{% endmacro %}
+
+<div class="edit-header">
+  <div class="edit-header-main">
+    <a class="back-btn" href="{{ url_for('vehicles.view_vehicle', vehicle_id=vehicle.id) }}" title="Back to vehicle">
+      <i class="fa-solid fa-arrow-left"></i>
+    </a>
+    <div>
+      <div class="edit-header-num">{{ vehicle.vehicle_number }}</div>
+      <div class="edit-header-meta">
+        {{ vehicle.owner_name }} &middot; {{ vehicle.vehicle_type or 'Type not set' }}{% if vehicle.district %} &middot; {{ vehicle.district }}{% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="edit-header-right">
+    <span class="badge-status {{ ocls }}">{{ olbl }}</span>
+    {% if vehicle.updated_at %}
+    <span class="edit-header-updated">Updated {{ vehicle.updated_at.strftime('%d %b %Y, %I:%M %p') }}</span>
+    {% endif %}
+  </div>
+</div>
+
 <form method="POST" class="form-card">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-  <div class="form-section">
-    <h4 class="form-section-title"><i class="fa-solid fa-car-side"></i> Vehicle Details</h4>
+  <div class="form-section" data-section="vehicle">
+    <h4 class="form-section-title" role="button" tabindex="0">
+      <span><i class="fa-solid fa-car-side"></i> Vehicle Details</span>
+      <span class="section-meta"><span class="section-count" data-count>0/0</span><i class="fa-solid fa-chevron-down section-chevron"></i></span>
+    </h4>
+    <div class="form-section-body">
     <div class="form-grid">
       <div class="form-group">
         <label>Vehicle Number *</label>
@@ -44,10 +85,15 @@
         <input type="date" name="registration_date" class="form-control" value="{{ form.get('registration_date','') }}">
       </div>
     </div>
+    </div>
   </div>
 
-  <div class="form-section">
-    <h4 class="form-section-title"><i class="fa-solid fa-user"></i> Owner Details</h4>
+  <div class="form-section" data-section="owner">
+    <h4 class="form-section-title" role="button" tabindex="0">
+      <span><i class="fa-solid fa-user"></i> Owner Details</span>
+      <span class="section-meta"><span class="section-count" data-count>0/0</span><i class="fa-solid fa-chevron-down section-chevron"></i></span>
+    </h4>
+    <div class="form-section-body">
     <div class="form-grid">
       <div class="form-group">
         <label>Owner Name *</label>
@@ -64,26 +110,19 @@
         <span class="field-hint">Optional — separate multiple emails with commas</span>
       </div>
     </div>
+    </div>
   </div>
 
-  <div class="form-section">
-    <h4 class="form-section-title"><i class="fa-solid fa-file-shield"></i> Document Expiry</h4>
+  <div class="form-section" data-section="documents">
+    <h4 class="form-section-title" role="button" tabindex="0">
+      <span><i class="fa-solid fa-file-shield"></i> Document Expiry</span>
+      <span class="section-meta"><span class="section-count" data-count>0/0</span><i class="fa-solid fa-chevron-down section-chevron"></i></span>
+    </h4>
+    <div class="form-section-body">
     <div class="form-grid">
-      <div class="form-group">
-        <label>PUC Expiry</label>
-        <input type="date" name="puc_expiry" class="form-control" value="{{ form.get('puc_expiry','') }}">
-        <span class="field-hint">Pollution Under Control certificate</span>
-      </div>
-      <div class="form-group">
-        <label>Fitness Expiry</label>
-        <input type="date" name="fitness_expiry" class="form-control" value="{{ form.get('fitness_expiry','') }}">
-        <span class="field-hint">Fitness certificate validity</span>
-      </div>
-      <div class="form-group">
-        <label>Permit Expiry</label>
-        <input type="date" name="permit_expiry" class="form-control" value="{{ form.get('permit_expiry','') }}">
-        <span class="field-hint">Vehicle permit validity</span>
-      </div>
+      {{ expiry_input('puc_expiry', 'PUC Expiry', 'Pollution Under Control certificate') }}
+      {{ expiry_input('fitness_expiry', 'Fitness Expiry', 'Fitness certificate validity') }}
+      {{ expiry_input('permit_expiry', 'Permit Expiry', 'Vehicle permit validity') }}
       <div class="form-group">
         <label>Permit From</label>
         <input type="date" name="permit_from" class="form-control" value="{{ form.get('permit_from','') }}">
@@ -100,31 +139,29 @@
         <span class="field-hint">Address printed on the permit</span>
       </div>
       <div class="form-group">
-        <label>National Permit Expiry</label>
-        <input type="date" name="national_permit_expiry" class="form-control" value="{{ form.get('national_permit_expiry','') }}">
-        <span class="field-hint">For interstate transport</span>
+        <label>PUC Certificate Number</label>
+        <input type="text" name="pollution_certificate_number" class="form-control" value="{{ form.get('pollution_certificate_number','') }}">
+        <span class="field-hint">Number printed on the certificate</span>
       </div>
-      <div class="form-group">
-        <label>State Permit Expiry</label>
-        <input type="date" name="state_permit_expiry" class="form-control" value="{{ form.get('state_permit_expiry','') }}">
-        <span class="field-hint">Within-state permit</span>
-      </div>
+      {{ expiry_input('national_permit_expiry', 'National Permit Expiry', 'For interstate transport') }}
+      {{ expiry_input('state_permit_expiry', 'State Permit Expiry', 'Within-state permit') }}
+    </div>
     </div>
   </div>
 
-  <div class="form-section">
-    <h4 class="form-section-title"><i class="fa-solid fa-indian-rupee-sign"></i> Tax Info</h4>
+  <div class="form-section" data-section="tax">
+    <h4 class="form-section-title" role="button" tabindex="0">
+      <span><i class="fa-solid fa-indian-rupee-sign"></i> Tax Info</span>
+      <span class="section-meta"><span class="section-count" data-count>0/0</span><i class="fa-solid fa-chevron-down section-chevron"></i></span>
+    </h4>
+    <div class="form-section-body">
     <div class="form-grid">
       <div class="form-group">
         <label>Tax From</label>
         <input type="date" name="tax_from" class="form-control" id="tax_from" value="{{ form.get('tax_from','') }}">
         <span class="field-hint">Start of tax period</span>
       </div>
-      <div class="form-group">
-        <label>Tax Expiry (Valid Upto)</label>
-        <input type="date" name="tax_expiry" class="form-control" id="tax_expiry" value="{{ form.get('tax_expiry','') }}">
-        <span class="field-hint">End of tax period</span>
-      </div>
+      {{ expiry_input('tax_expiry', 'Tax Expiry (Valid Upto)', 'End of tax period') }}
       <div class="form-group">
         <label>Tax Mode</label>
         <select name="tax_mode" id="tax_mode" class="form-select">
@@ -139,15 +176,17 @@
         <input type="number" step="0.01" name="tax_amount" class="form-control" value="{{ form.get('tax_amount','') }}">
       </div>
     </div>
+    </div>
   </div>
 
-  <div class="form-section">
-    <h4 class="form-section-title"><i class="fa-solid fa-shield-halved"></i> Insurance Info</h4>
+  <div class="form-section" data-section="insurance">
+    <h4 class="form-section-title" role="button" tabindex="0">
+      <span><i class="fa-solid fa-shield-halved"></i> Insurance Info</span>
+      <span class="section-meta"><span class="section-count" data-count>0/0</span><i class="fa-solid fa-chevron-down section-chevron"></i></span>
+    </h4>
+    <div class="form-section-body">
     <div class="form-grid">
-      <div class="form-group">
-        <label>Insurance Expiry</label>
-        <input type="date" name="insurance_expiry" class="form-control" value="{{ form.get('insurance_expiry','') }}">
-      </div>
+      {{ expiry_input('insurance_expiry', 'Insurance Expiry', '') }}
       <div class="form-group">
         <label>Insurance Company</label>
         <input type="text" name="insurance_company" class="form-control" value="{{ form.get('insurance_company','') }}">
@@ -156,28 +195,30 @@
         <label>Policy Number</label>
         <input type="text" name="policy_number" class="form-control" value="{{ form.get('policy_number','') }}">
       </div>
-      <div class="form-group">
-        <label>Pollution Certificate Number</label>
-        <input type="text" name="pollution_certificate_number" class="form-control" value="{{ form.get('pollution_certificate_number','') }}">
-      </div>
+    </div>
     </div>
   </div>
 
-  <div class="form-section">
-    <h4 class="form-section-title"><i class="fa-solid fa-comment"></i> Remarks</h4>
+  <div class="form-section" data-section="remarks">
+    <h4 class="form-section-title" role="button" tabindex="0">
+      <span><i class="fa-solid fa-comment"></i> Remarks</span>
+      <span class="section-meta"><span class="section-count" data-count>0/0</span><i class="fa-solid fa-chevron-down section-chevron"></i></span>
+    </h4>
+    <div class="form-section-body">
     <div class="form-group form-group-full">
       <textarea name="remarks" class="form-control" rows="3" placeholder="Any additional notes...">{{ form.get('remarks','') }}</textarea>
     </div>
+    </div>
   </div>
 
-  <div class="form-actions">
+  <div class="form-actions form-actions-sticky">
     <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>
     <a href="{{ url_for('vehicles.vehicle_list') }}" class="btn btn-outline-secondary">Cancel</a>
     <button type="submit"
             formaction="{{ url_for('vehicles.delete_vehicle', vehicle_id=vehicle.id) }}"
             formmethod="POST"
             onclick="return confirm('Delete vehicle {{ vehicle.vehicle_number }}? This cannot be undone.');"
-            class="btn btn-outline-danger"><i class="fa-solid fa-trash"></i> Delete Vehicle</button>
+            class="btn btn-outline-danger delete-btn"><i class="fa-solid fa-trash"></i> Delete Vehicle</button>
   </div>
 </form>
 {% endblock %}
@@ -188,10 +229,177 @@
   .form-section:last-of-type { border-bottom:none; }
   .form-section-title {
     font-size:0.95rem; font-weight:700; color:var(--text); margin:0 0 14px;
-    display:flex; align-items:center; gap:8px;
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    cursor:pointer; user-select:none;
   }
   .form-section-title i { color:var(--blue); font-size:0.9rem; }
+  .form-section-title:focus-visible { outline:2px solid var(--blue); outline-offset:2px; border-radius:6px; }
   .field-hint { display:block; font-size:0.78rem; color:var(--text-muted); margin-top:3px; }
+
+  /* header card */
+  .edit-header {
+    display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between;
+    background:var(--charcoal); border:1px solid var(--border); border-radius:12px;
+    padding:14px 18px; margin-bottom:18px;
+  }
+  .edit-header-main { display:flex; align-items:center; gap:12px; }
+  .back-btn {
+    width:36px; height:36px; display:inline-flex; align-items:center; justify-content:center;
+    border-radius:9px; border:1px solid var(--border); background:var(--charcoal-light);
+    color:var(--text); flex-shrink:0;
+  }
+  .back-btn:hover { color:var(--blue); border-color:var(--active-border); text-decoration:none; }
+  .edit-header-num { font-size:1.12rem; font-weight:800; color:var(--text); }
+  .edit-header-meta { font-size:0.82rem; color:var(--text-muted); margin-top:2px; }
+  .edit-header-right { display:flex; align-items:center; gap:12px; }
+  .edit-header-updated { font-size:0.76rem; color:var(--text-muted); }
+
+  /* collapsible sections */
+  .section-meta { display:flex; align-items:center; gap:10px; }
+  .section-count {
+    font-size:0.72rem; font-weight:700; color:var(--text-muted);
+    background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:2px 8px;
+  }
+  .section-chevron { color:var(--text-muted); font-size:0.8rem; transition:transform 0.15s ease; }
+  .form-section.collapsed .section-chevron { transform:rotate(-90deg); }
+  .form-section.collapsed .form-section-body { display:none; }
+  .form-section.collapsed .form-section-title { margin-bottom:0; }
+  .form-section.collapsed { padding-bottom:14px; }
+
+  /* live expiry status badges */
+  .date-row { display:flex; gap:8px; align-items:center; }
+  .date-row .form-control { flex:1; min-width:0; }
+  .expiry-badge {
+    flex-shrink:0; display:inline-block; padding:4px 9px; border-radius:6px;
+    font-size:0.74rem; font-weight:700; white-space:nowrap;
+  }
+
+  /* changed-field highlighting */
+  input.field-changed, select.field-changed, textarea.field-changed {
+    border-color:var(--blue) !important;
+    background:var(--active-bg) !important;
+  }
+
+  /* sticky save bar */
+  .form-actions-sticky {
+    position:sticky; bottom:0; z-index:6;
+    margin-top:18px; padding:12px 2px 2px;
+    background:var(--charcoal); border-top:1px solid var(--border);
+  }
+  .form-actions-sticky .delete-btn { margin-left:auto; }
 </style>
 
+<script>
+(function () {
+  var form = document.querySelector('form.form-card');
+  if (!form) return;
+
+  var EXPIRY = ['puc_expiry', 'fitness_expiry', 'permit_expiry', 'tax_expiry',
+                'insurance_expiry', 'national_permit_expiry', 'state_permit_expiry'];
+
+  function daysUntil(v) {
+    if (!v) return null;
+    var p = v.split('-');
+    if (p.length !== 3) return null;
+    var then = Date.UTC(+p[0], +p[1] - 1, +p[2]);
+    var n = new Date();
+    var today = Date.UTC(n.getFullYear(), n.getMonth(), n.getDate());
+    return Math.round((then - today) / 86400000);
+  }
+
+  function statusFor(days) {
+    if (days < 0) return ['Expired', 'status-red', (-days) + ' days overdue'];
+    if (days === 0) return ['Expires Today', 'status-orange', 'expires today'];
+    if (days <= 7) return ['Expiring Soon', 'status-orange', days + ' days left'];
+    if (days <= 30) return ['Expiring Soon', 'status-yellow', days + ' days left'];
+    return ['Valid', 'status-green', days + ' days left'];
+  }
+
+  function refreshBadge(input) {
+    var badge = form.querySelector('[data-badge="' + input.name + '"]');
+    if (!badge) return;
+    var days = daysUntil(input.value);
+    if (days === null) {
+      badge.textContent = 'N/A';
+      badge.className = 'expiry-badge status-gray';
+      badge.title = '';
+      return;
+    }
+    var s = statusFor(days);
+    badge.textContent = s[0];
+    badge.className = 'expiry-badge ' + s[1];
+    badge.title = s[2];
+  }
+
+  /* initial values for dirty tracking + changed highlighting */
+  var initial = new Map();
+  form.querySelectorAll('input[name], select[name], textarea[name]').forEach(function (el) {
+    if (el.type === 'hidden') return;
+    initial.set(el, el.value);
+  });
+
+  var dirty = false;
+
+  function recalcDirty() {
+    dirty = false;
+    initial.forEach(function (v, el) { if (el.value !== v) dirty = true; });
+  }
+
+  window.addEventListener('beforeunload', function (e) {
+    if (dirty) { e.preventDefault(); e.returnValue = ''; }
+  });
+  form.addEventListener('submit', function () { dirty = false; });
+
+  /* collapsible sections (state persisted per browser) */
+  var storeKey = 'vcms-edit-collapsed';
+  var collapsed = {};
+  try { collapsed = JSON.parse(localStorage.getItem(storeKey) || '{}'); } catch (e) {}
+
+  function applyCollapsed() {
+    form.querySelectorAll('.form-section[data-section]').forEach(function (sec) {
+      sec.classList.toggle('collapsed', !!collapsed[sec.dataset.section]);
+    });
+  }
+
+  function toggleSection(sec) {
+    collapsed[sec.dataset.section] = !collapsed[sec.dataset.section];
+    try { localStorage.setItem(storeKey, JSON.stringify(collapsed)); } catch (e) {}
+    applyCollapsed();
+  }
+
+  form.querySelectorAll('.form-section-title').forEach(function (t) {
+    var sec = t.closest('.form-section');
+    t.addEventListener('click', function () { toggleSection(sec); });
+    t.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSection(sec); }
+    });
+  });
+  applyCollapsed();
+
+  /* section fill counts (live) */
+  function updateCounts() {
+    form.querySelectorAll('.form-section[data-section]').forEach(function (sec) {
+      var fields = sec.querySelectorAll('input[name]:not([type="hidden"]), select[name], textarea[name]');
+      var filled = 0;
+      fields.forEach(function (f) { if ((f.value || '').trim() !== '') filled++; });
+      var el = sec.querySelector('[data-count]');
+      if (el) el.textContent = filled + '/' + fields.length;
+    });
+  }
+  updateCounts();
+
+  /* single delegated handler: changed highlight, live badges, dirty, counts */
+  function handleAny(e) {
+    var el = e.target;
+    if (el && el.name && initial.has(el)) {
+      el.classList.toggle('field-changed', el.value !== initial.get(el));
+      if (el.type === 'date' && EXPIRY.indexOf(el.name) !== -1) refreshBadge(el);
+    }
+    recalcDirty();
+    updateCounts();
+  }
+  form.addEventListener('input', handleAny);
+  form.addEventListener('change', handleAny);
+})();
+</script>
 {% endblock %}

@@ -3,14 +3,14 @@
 {% block page_title %}Reports{% endblock %}
 
 {% block content %}
-<div class="report-tabs">
+<div class="report-tabs no-print">
   {% for key, label in [
     ('puc_due','PUC Due'), ('fitness_due','Fitness Due'), ('tax_due','Tax Due'),
     ('permit_due','Permit Due'), ('insurance_due','Insurance Due'),
     ('owner_wise','Owner-wise'), ('type_wise','Vehicle Type-wise'),
     ('monthly_renewals','Monthly Renewals'), ('yearly_renewals','Yearly Renewals')
   ] %}
-  <a href="{{ url_for('main.reports', type=key) }}" class="report-tab {{ 'active' if report_type==key }}">{{ label }}</a>
+  <a href="{{ url_for('main.reports', type=key, days=days) if key in due_types else url_for('main.reports', type=key) }}" class="report-tab {{ 'active' if report_type==key }}">{{ label }}{% if due_counts.get(key) %} <span class="report-tab-badge">{{ due_counts[key] }}</span>{% endif %}</a>
   {% endfor %}
 </div>
 
@@ -18,10 +18,52 @@
   {% if not report_type %}
     <p class="empty-hint">Select a report type above to generate a report.</p>
 
-  {% elif report_type in ['puc_due','fitness_due','tax_due','permit_due','insurance_due'] %}
+  {% else %}
+  <div class="print-header">
+    <div class="print-org">VCMS &middot; Vehicle Compliance Management System</div>
+    <h2 class="print-title">{{ report_label }}</h2>
+    <div class="print-meta">
+      Generated {{ generated }}{% if report_type in due_types %} &middot; Window: next {{ days }} days{% endif %}
+    </div>
+  </div>
+
+  <div class="report-toolbar">
+    <div class="report-toolbar-left no-print">
+      {% if report_type in due_types %}
+      <span class="toolbar-label">Window</span>
+      {% for d in [7, 30, 90] %}
+      <a href="{{ url_for('main.reports', type=report_type, days=d) }}" class="window-chip {{ 'active' if days == d }}">{{ d }} days</a>
+      {% endfor %}
+      {% endif %}
+    </div>
+
+    {% if summary %}
+    <span class="report-summary">
+      {% if report_type in due_types %}
+      <span class="sum-chip status-red">{{ summary.expired }} expired</span>
+      <span class="sum-chip status-orange">{{ summary.week }} due in 7 days</span>
+      {% if summary.days > 7 %}
+      <span class="sum-chip status-yellow">{{ summary.later }} due in 8&ndash;{{ summary.days }} days</span>
+      {% endif %}
+      <span class="sum-chip status-gray">{{ summary.total }} total</span>
+      {% elif report_type in ['owner_wise', 'type_wise'] %}
+      <span class="sum-chip sum-chip-neutral">{{ summary.groups }} groups</span>
+      <span class="sum-chip sum-chip-neutral">{{ summary.vehicles }} vehicles</span>
+      {% else %}
+      <span class="sum-chip sum-chip-neutral">{{ summary.groups }} sections</span>
+      <span class="sum-chip sum-chip-neutral">{{ summary.entries }} entries</span>
+      {% endif %}
+    </span>
+    {% endif %}
+
+    <button class="btn btn-outline-secondary no-print" onclick="window.print()"><i class="fa-solid fa-print"></i> Print</button>
+  </div>
+
+  {% if report_type in due_types %}
     {% if results %}
+    <div class="table-wrap">
     <table class="table-main">
-      <thead><tr><th>Vehicle</th><th>Owner</th><th>Document</th><th>Expiry Date</th></tr></thead>
+      <thead><tr><th>Vehicle</th><th>Owner</th><th>Document</th><th>Expiry Date</th><th>Status</th><th>Days Left</th></tr></thead>
       <tbody>
         {% for r in results %}
         <tr>
@@ -29,55 +71,71 @@
           <td>{{ r.vehicle.owner_name }}</td>
           <td>{{ r.field }}</td>
           <td>{{ r.expiry.strftime('%d-%m-%Y') }}</td>
+          <td><span class="badge-status {{ r.class }}">{{ r.status }}</span></td>
+          <td class="{{ 'days-overdue' if r.days < 0 else ('days-soon' if r.days <= 7 else '') }}">
+            {%- if r.days < 0 %}{{ -r.days }} days overdue
+            {%- elif r.days == 0 %}Today
+            {%- else %}{{ r.days }} days
+            {%- endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
+    </div>
     {% else %}
-    <p class="empty-hint">No records due within 30 days.</p>
+    <p class="empty-hint">No records expired or due within the next {{ days }} days.</p>
     {% endif %}
 
-  {% elif report_type in ['owner_wise','type_wise'] %}
+  {% elif report_type in ['owner_wise', 'type_wise'] %}
     {% if results %}
       {% for group_name, group_vehicles in results %}
       <h4 class="report-group-title">{{ group_name }} <span class="text-muted">({{ group_vehicles|length }})</span></h4>
+      <div class="table-wrap">
       <table class="table-main mb-4">
-        <thead><tr><th>Vehicle Number</th><th>Chassis Number</th><th>Owner</th></tr></thead>
+        <thead><tr><th>Vehicle Number</th><th>Chassis Number</th><th>Owner</th><th>Status</th></tr></thead>
         <tbody>
           {% for v in group_vehicles %}
+          {% set cls = v.overall_status() %}
           <tr>
             <td><a href="{{ url_for('vehicles.view_vehicle', vehicle_id=v.id) }}">{{ v.vehicle_number }}</a></td>
             <td>{{ v.chassis_number }}</td>
             <td>{{ v.owner_name }}</td>
+            <td><span class="badge-status {{ cls }}">{{ {'status-red':'Expired','status-orange':'Expiring Soon','status-yellow':'Expiring Soon','status-gray':'N/A','status-green':'Valid'}[cls] }}</span></td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
+      </div>
       {% endfor %}
     {% else %}
     <p class="empty-hint">No data available.</p>
     {% endif %}
 
-  {% elif report_type in ['monthly_renewals','yearly_renewals'] %}
+  {% elif report_type in ['monthly_renewals', 'yearly_renewals'] %}
     {% if results %}
       {% for doc_label, entries in results %}
       <h4 class="report-group-title">{{ doc_label }} <span class="text-muted">({{ entries|length }})</span></h4>
+      <div class="table-wrap">
       <table class="table-main mb-4">
-        <thead><tr><th>Vehicle Number</th><th>Owner</th><th>Expiry Date</th></tr></thead>
+        <thead><tr><th>Vehicle Number</th><th>Owner</th><th>Expiry Date</th><th>Status</th></tr></thead>
         <tbody>
-          {% for v, expiry in entries %}
+          {% for v, expiry, st in entries %}
           <tr>
             <td><a href="{{ url_for('vehicles.view_vehicle', vehicle_id=v.id) }}">{{ v.vehicle_number }}</a></td>
             <td>{{ v.owner_name }}</td>
             <td>{{ expiry.strftime('%d-%m-%Y') }}</td>
+            <td><span class="badge-status {{ st.class }}">{{ st.status }}</span></td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
+      </div>
       {% endfor %}
     {% else %}
     <p class="empty-hint">No renewals found for this period.</p>
     {% endif %}
+  {% endif %}
   {% endif %}
 </div>
 {% endblock %}

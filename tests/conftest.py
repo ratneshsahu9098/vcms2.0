@@ -22,6 +22,14 @@ _scheduler.start_scheduler = lambda application: None
 import app.utils.settings as _settings  # noqa: E402
 _settings.SETTINGS_FILE = os.path.join(_TMP, "settings.json")
 
+import app.services.google_drive as _gdrive  # noqa: E402
+_gdrive.TOKEN_FILE = os.path.join(_TMP, "token.json")  # never connected in tests
+_gdrive.CLIENT_SECRET_FILE = os.path.join(_TMP, "client_secret.json")
+
+import app.config as _config  # noqa: E402
+_config.Config.IMPORT_CACHE_DIR = os.path.join(_TMP, "import_cache")  # preview cache stays in tmp
+_config.Config.INSIGHTS_CACHE = os.path.join(_TMP, "insights_cache.json")  # never reuse live insights
+
 from app import create_app  # noqa: E402
 
 

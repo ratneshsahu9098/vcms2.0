@@ -4,38 +4,42 @@
 
 {% block content %}
 {% if not ai_enabled %}
-<div class="panel" style="text-align:center; padding:60px 20px;">
-  <i class="fa-solid fa-robot" style="font-size:3rem; color:var(--text-muted); margin-bottom:16px;"></i>
-  <h3 style="color:var(--text);">API Key Not Configured</h3>
-  <p style="color:var(--text-muted); margin:10px 0 20px;">Set your AI API key (OpenRouter or Google Gemini) in Settings to use the AI assistant.</p>
+<div class="panel ai-off-panel">
+  <i class="fa-solid fa-robot ai-off-icon"></i>
+  <h3>API Key Not Configured</h3>
+  <p>Set your AI API key (OpenRouter or Google Gemini) in Settings to use the AI assistant.</p>
   <a href="{{ url_for('settings.settings') }}" class="btn btn-primary"><i class="fa-solid fa-gear"></i> Open Settings</a>
-  <p style="color:var(--text-muted); margin-top:12px; font-size:0.85rem;">Free keys: <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a> &middot; <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a></p>
+  <p class="ai-off-links">Free keys: <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a> &middot; <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a></p>
 </div>
 {% else %}
 <div class="ai-chat-container">
-  <div class="ai-chat-sidebar">
-    <a href="{{ url_for('ai.ai_chat_new') }}" class="btn btn-primary" style="width:100%; margin-bottom:12px;">
-      <i class="fa-solid fa-plus"></i> New Chat
-    </a>
-    <a href="{{ url_for('ai.ai_chat_history') }}" class="btn btn-outline-secondary" style="width:100%;">
-      <i class="fa-solid fa-clock-rotate-left"></i> Chat History
-    </a>
-  </div>
+  <aside class="ai-chat-sidebar">
+    <a href="{{ url_for('ai.ai_chat_new') }}" class="btn btn-primary side-new"><i class="fa-solid fa-plus"></i> New Chat</a>
+    <a href="{{ url_for('ai.ai_chat_history') }}" class="btn btn-outline-secondary side-hist"><i class="fa-solid fa-clock-rotate-left"></i> History</a>
+    <div class="side-label">Recent</div>
+    <nav class="side-list" id="sideList">
+      {% for s in sessions %}
+      <a class="side-item {{ 'active' if chat_session and s.id == chat_session.id }}"
+         href="{{ url_for('ai.ai_chat', session_id=s.id) }}" title="{{ s.title }}">{{ s.title }}</a>
+      {% else %}
+      <p class="side-empty">No conversations yet.</p>
+      {% endfor %}
+    </nav>
+  </aside>
 
   <div class="ai-chat-main">
     <div class="ai-chat-messages" id="chatMessages">
       {% if not messages %}
       <div class="ai-welcome">
-        <i class="fa-solid fa-robot" style="font-size:2.5rem; color:var(--blue); margin-bottom:16px;"></i>
-        <h3 style="color:var(--text); margin:0 0 8px;">VCMS AI Assistant</h3>
-        <p style="color:var(--text-muted); margin:0 0 20px;">Ask anything about your fleet compliance data.</p>
+        <i class="fa-solid fa-robot ai-welcome-icon"></i>
+        <h3>VCMS AI Assistant</h3>
+        <p>Ask anything about your fleet compliance data.</p>
         <div class="ai-suggestions">
-          <button class="ai-suggestion-btn" onclick="askSuggestion(this)">Which vehicles have expired documents?</button>
-          <button class="ai-suggestion-btn" onclick="askSuggestion(this)">Show me tax expiring this month</button>
-          <button class="ai-suggestion-btn" onclick="askSuggestion(this)">How many vehicles need insurance renewal?</button>
-          <button class="ai-suggestion-btn" onclick="askSuggestion(this)">Give me a compliance summary</button>
-          <button class="ai-suggestion-btn" onclick="askSuggestion(this)">Tell me about vehicle MH12AB1234</button>
-          <button class="ai-suggestion-btn" onclick="askSuggestion(this)">Which vehicles are in Pune district?</button>
+          <button class="ai-suggestion-btn" type="button" onclick="askSuggestion(this)">Which vehicles have expired documents?</button>
+          <button class="ai-suggestion-btn" type="button" onclick="askSuggestion(this)">Show me tax expiring this month</button>
+          <button class="ai-suggestion-btn" type="button" onclick="askSuggestion(this)">How many vehicles need insurance renewal?</button>
+          <button class="ai-suggestion-btn" type="button" onclick="askSuggestion(this)">Give me a compliance summary</button>
+          <button class="ai-suggestion-btn" type="button" onclick="askSuggestion(this)">Which vehicles are in Pune district?</button>
         </div>
       </div>
       {% endif %}
@@ -43,25 +47,40 @@
       {% for msg in messages %}
       <div class="ai-msg ai-msg-{{ msg.role }}">
         <div class="ai-msg-avatar">
-          {% if msg.role == 'user' %}
-          <i class="fa-solid fa-user"></i>
-          {% else %}
-          <i class="fa-solid fa-robot"></i>
+          <i class="fa-solid fa-{{ 'user' if msg.role == 'user' else 'robot' }}"></i>
+        </div>
+        <div class="ai-msg-col">
+          <div class="ai-msg-content markdown-body">{{ msg.content | safe }}</div>
+          {% if msg.role == 'assistant' %}
+          <div class="ai-msg-tools">
+            <button class="ai-copy" type="button" title="Copy message"><i class="fa-regular fa-copy"></i></button>
+          </div>
           {% endif %}
         </div>
-        <div class="ai-msg-content markdown-body">{{ msg.content | safe }}</div>
       </div>
       {% endfor %}
+
+      <div class="ai-msg ai-msg-assistant ai-typing" id="typingIndicator">
+        <div class="ai-msg-avatar"><i class="fa-solid fa-robot"></i></div>
+        <div class="ai-msg-col">
+          <div class="ai-msg-content typing-dots"><span></span><span></span><span></span></div>
+        </div>
+      </div>
     </div>
 
-    <form method="POST" class="ai-chat-input" id="chatForm">
+    <form method="POST" class="ai-chat-input" id="chatForm" data-send-url="{{ url_for('ai.ai_chat_send') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       {% if chat_session %}
-      <input type="hidden" name="session_id" value="{{ chat_session.id }}">
+      <input type="hidden" name="session_id" id="sessionIdInput" value="{{ chat_session.id }}">
       {% endif %}
-      <input type="text" name="message" id="chatInput" class="form-control" placeholder="Ask about your fleet..." autocomplete="off" required>
-      <button type="submit" class="btn btn-primary"><i class="fa-solid fa-paper-plane"></i></button>
+      <textarea name="message" id="chatInput" class="form-control chat-textarea" rows="1"
+                placeholder="Ask about your fleet… (Enter to send, Shift+Enter for a new line)"
+                autocomplete="off" required></textarea>
+      <button type="submit" class="btn btn-primary" id="sendBtn" title="Send message">
+        <i class="fa-solid fa-paper-plane"></i>
+      </button>
     </form>
+    <div class="chat-hint">AI can make mistakes — verify important dates and numbers.</div>
   </div>
 </div>
 {% endif %}
@@ -70,35 +89,90 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
-  .ai-chat-container { display:flex; height:calc(100vh - 160px); gap:16px; }
-  .ai-chat-sidebar { width:200px; flex-shrink:0; display:flex; flex-direction:column; }
-  .ai-chat-main { flex:1; display:flex; flex-direction:column; min-width:0; }
-  .ai-chat-messages { flex:1; overflow-y:auto; padding:10px 0; display:flex; flex-direction:column; gap:16px; }
-  .ai-welcome { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; text-align:center; }
-  .ai-suggestions { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
+  .ai-off-panel { text-align: center; padding: 60px 20px; }
+  .ai-off-icon { font-size: 3rem; color: var(--text-muted); margin-bottom: 16px; }
+  .ai-off-panel h3 { color: var(--text); margin: 0; }
+  .ai-off-panel p { color: var(--text-muted); margin: 10px 0 20px; }
+  .ai-off-links { margin-top: 12px !important; font-size: 0.85rem; }
+
+  .ai-chat-container { display: flex; height: calc(100vh - 160px); gap: 16px; }
+
+  .ai-chat-sidebar { width: 220px; flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; }
+  .side-new { width: 100%; margin-bottom: 10px; }
+  .side-hist { width: 100%; }
+  .side-label {
+    font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--text-muted); margin: 16px 0 6px;
+  }
+  .side-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; min-height: 0; }
+  .side-item {
+    display: block; padding: 8px 10px; border-radius: 8px; font-size: 0.82rem;
+    color: var(--text-muted); background: var(--charcoal-light); border: 1px solid transparent;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: all .12s;
+  }
+  .side-item:hover { color: var(--text); border-color: var(--border); }
+  .side-item.active { background: var(--active-bg); border-color: var(--active-border); color: var(--blue); font-weight: 600; }
+  .side-empty { font-size: 0.78rem; color: var(--text-muted); padding: 6px 2px; margin: 0; }
+
+  .ai-chat-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .ai-chat-messages { flex: 1; overflow-y: auto; padding: 10px 0; display: flex; flex-direction: column; gap: 16px; }
+
+  .ai-welcome { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center; }
+  .ai-welcome-icon { font-size: 2.6rem; color: var(--blue); margin-bottom: 14px; }
+  .ai-welcome h3 { color: var(--text); margin: 0 0 8px; }
+  .ai-welcome p { color: var(--text-muted); margin: 0 0 20px; }
+  .ai-suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 640px; }
   .ai-suggestion-btn {
-    background:var(--charcoal-light); border:1px solid var(--border); color:var(--text-muted);
-    padding:8px 16px; border-radius:20px; font-size:0.85rem; cursor:pointer; transition:all 0.15s;
+    background: var(--charcoal-light); border: 1px solid var(--border); color: var(--text-muted);
+    padding: 8px 16px; border-radius: 20px; font-size: 0.85rem; cursor: pointer; transition: all 0.15s;
   }
-  .ai-suggestion-btn:hover { border-color:var(--blue); color:var(--blue); }
-  .ai-msg { display:flex; gap:12px; max-width:85%; }
-  .ai-msg-user { align-self:flex-end; flex-direction:row-reverse; }
-  .ai-msg-assistant { align-self:flex-start; }
+  .ai-suggestion-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+  .ai-msg { display: flex; gap: 12px; max-width: 88%; }
+  .ai-msg-user { align-self: flex-end; flex-direction: row-reverse; }
+  .ai-msg-assistant { align-self: flex-start; }
   .ai-msg-avatar {
-    width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center;
-    flex-shrink:0; font-size:0.9rem;
+    width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; font-size: 0.9rem;
   }
-  .ai-msg-user .ai-msg-avatar { background:var(--ai-avatar-user); color:var(--blue); }
-  .ai-msg-assistant .ai-msg-avatar { background:var(--ai-avatar-assistant); color:var(--green); }
+  .ai-msg-user .ai-msg-avatar { background: var(--ai-avatar-user); color: var(--blue); }
+  .ai-msg-assistant .ai-msg-avatar { background: var(--ai-avatar-assistant); color: var(--green); }
+  .ai-msg-col { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .ai-msg-user .ai-msg-col { align-items: flex-end; }
   .ai-msg-content {
-    background:var(--charcoal); border:1px solid var(--border); border-radius:12px;
-    padding:12px 16px; font-size:0.9rem; line-height:1.6; word-wrap:break-word;
+    background: var(--charcoal); border:1px solid var(--border); border-radius: 12px;
+    padding: 12px 16px; font-size: 0.9rem; line-height: 1.6; word-wrap: break-word;
   }
-  .ai-msg-user .ai-msg-content { background:var(--ai-user-bg); border-color:var(--ai-user-border); }
-  .ai-chat-input {
-    display:flex; gap:10px; padding-top:14px; border-top:1px solid var(--border); margin-top:10px;
+  .ai-msg-user .ai-msg-content { background: var(--ai-user-bg); border-color: var(--ai-user-border); }
+  .ai-msg-error .ai-msg-content { background: rgba(239, 68, 68, .08); border-color: var(--red); color: var(--red); }
+
+  .ai-msg-tools { display: flex; gap: 6px; opacity: 0; transition: opacity .15s; }
+  .ai-msg:hover .ai-msg-tools { opacity: 1; }
+  .ai-copy {
+    background: none; border: none; color: var(--text-muted); cursor: pointer;
+    font-size: 0.8rem; padding: 2px 6px; border-radius: 6px;
   }
-  .ai-chat-input .form-control { flex:1; }
+  .ai-copy:hover { color: var(--blue); background: var(--charcoal-light); }
+  .ai-copy.copied { color: var(--green); }
+
+  .ai-typing { display: none; }
+  .typing-dots { display: flex; gap: 5px; align-items: center; padding: 14px 18px; }
+  .typing-dots span {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted);
+    animation: blink 1.2s infinite ease-in-out;
+  }
+  .typing-dots span:nth-child(2) { animation-delay: .2s; }
+  .typing-dots span:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+
+  .ai-chat-input { display: flex; gap: 10px; padding-top: 14px; border-top: 1px solid var(--border); margin-top: 10px; align-items: flex-end; }
+  .chat-textarea {
+    flex: 1; resize: none; max-height: 140px; line-height: 1.5; padding: 10px 14px;
+    overflow-y: auto; font-family: inherit;
+  }
+  #sendBtn { height: 42px; width: 44px; flex-shrink: 0; }
+  .chat-hint { font-size: 0.72rem; color: var(--text-muted); text-align: center; margin-top: 8px; }
+
   .markdown-body table { width:100%; border-collapse:collapse; margin:10px 0; font-size:0.85rem; }
   .markdown-body th, .markdown-body td { border:1px solid var(--border); padding:8px 10px; text-align:left; }
   .markdown-body th { background:var(--charcoal-light); color:var(--text); font-weight:600; }
@@ -108,20 +182,182 @@
   .markdown-body strong { color:var(--text); }
   .markdown-body code { background:var(--bg); padding:2px 6px; border-radius:4px; font-size:0.82rem; color:var(--green); }
   .markdown-body p { margin:6px 0; color:var(--text-muted); }
-  @media (max-width: 900px) { .ai-chat-sidebar { display:none; } }
+  .markdown-body a { color: var(--blue); }
+
+  @media (max-width: 900px) {
+    .ai-chat-container { flex-direction: column; height: calc(100vh - 140px); gap: 10px; }
+    .ai-chat-sidebar { width: 100%; flex-direction: row; align-items: center; gap: 8px; }
+    .side-new, .side-hist { width: auto !important; margin: 0 !important; padding: 6px 12px; font-size: .82rem; }
+    .side-label, .side-list { display: none; }
+    .ai-msg { max-width: 96%; }
+  }
 </style>
 <script>
   marked.setOptions({ breaks: true, gfm: true });
 
-  document.querySelectorAll('.markdown-body').forEach(el => {
-    el.innerHTML = marked.parse(el.textContent);
+  var msgs = document.getElementById('chatMessages');
+  var form = document.getElementById('chatForm');
+  var input = document.getElementById('chatInput');
+  var sendBtn = document.getElementById('sendBtn');
+  var typing = document.getElementById('typingIndicator');
+  var sidInput = document.getElementById('sessionIdInput');
+  var sending = false;
+
+  function renderMarkdown(root) {
+    root.querySelectorAll('.markdown-body').forEach(function (el) {
+      if (el.dataset.rendered) return;
+      el.innerHTML = marked.parse(el.textContent);
+      el.dataset.rendered = '1';
+    });
+  }
+  renderMarkdown(document);
+
+  function scrollBottom() { if (msgs) msgs.scrollTop = msgs.scrollHeight; }
+  scrollBottom();
+
+  function autoGrow() {
+    if (!input) return;
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 140) + 'px';
+  }
+  if (input) { autoGrow(); input.focus(); }
+
+  function askSuggestion(btn) {
+    input.value = btn.textContent;
+    autoGrow();
+    if (form.requestSubmit) form.requestSubmit();
+    else form.dispatchEvent(new Event('submit', { cancelable: true }));
+  }
+
+  function bubble(role, raw) {
+    var wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    var icon = role === 'user' ? 'user' : 'robot';
+    var tools = role === 'assistant'
+      ? '<div class="ai-msg-tools"><button class="ai-copy" type="button" title="Copy message"><i class="fa-regular fa-copy"></i></button></div>'
+      : '';
+    wrap.innerHTML =
+      '<div class="ai-msg-avatar"><i class="fa-solid fa-' + icon + '"></i></div>' +
+      '<div class="ai-msg-col"><div class="ai-msg-content markdown-body"></div>' + tools + '</div>';
+    var content = wrap.querySelector('.ai-msg-content');
+    content.textContent = raw;               /* textContent: never injects HTML */
+    msgs.appendChild(wrap);
+    renderMarkdown(wrap);
+    return wrap;
+  }
+
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('.ai-copy');
+    if (!btn) return;
+    var content = btn.closest('.ai-msg-col').querySelector('.ai-msg-content');
+    var text = content.innerText;
+    function done() {
+      btn.innerHTML = '<i class="fa-solid fa-check"></i>';
+      btn.classList.add('copied');
+      setTimeout(function () {
+        btn.innerHTML = '<i class="fa-regular fa-copy"></i>';
+        btn.classList.remove('copied');
+      }, 1500);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(fallback);
+    } else { fallback(); }
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (err) {}
+      document.body.removeChild(ta); done();
+    }
   });
 
-  const chatMessages = document.getElementById('chatMessages');
-  if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
-  function askSuggestion(btn) {
-    document.getElementById('chatInput').value = btn.textContent;
-    document.getElementById('chatForm').submit();
+  function setSending(on) {
+    sending = on;
+    sendBtn.disabled = on;
+    sendBtn.innerHTML = on
+      ? '<i class="fa-solid fa-spinner fa-spin"></i>'
+      : '<i class="fa-solid fa-paper-plane"></i>';
+  }
+
+  if (form) {
+    form.addEventListener('submit', function (e) {
+      if (!window.fetch) return;             /* no fetch: native POST fallback */
+      e.preventDefault();
+      var text = (input.value || '').trim();
+      if (!text || sending) return;
+
+      setSending(true);
+      bubble('user', text);
+      input.value = '';
+      autoGrow();
+      if (typing) typing.style.display = 'flex';
+      scrollBottom();
+
+      var body = new URLSearchParams();
+      body.append('csrf_token', form.querySelector('[name="csrf_token"]').value);
+      body.append('message', text);
+      if (sidInput && sidInput.value) body.append('session_id', sidInput.value);
+
+      fetch(form.dataset.sendUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+        body: body.toString()
+      }).then(function (res) {
+        return res.json().catch(function () { return null; }).then(function (data) {
+          if (!res.ok || !data || !data.ok) {
+            throw new Error((data && data.error) || ('Request failed (' + res.status + ')'));
+          }
+          return data;
+        });
+      }).then(function (data) {
+        if (typing) typing.style.display = 'none';
+        bubble('assistant', data.reply);
+        if (data.session_id) {
+          if (sidInput) sidInput.value = data.session_id;
+          else {
+            var h = document.createElement('input');
+            h.type = 'hidden'; h.name = 'session_id'; h.id = 'sessionIdInput';
+            h.value = data.session_id;
+            form.appendChild(h);
+            sidInput = h;
+          }
+          if (data.session_url) history.replaceState({}, '', data.session_url);
+          addSidebarItem(data.session_url, text);
+        }
+        scrollBottom();
+      }).catch(function (err) {
+        if (typing) typing.style.display = 'none';
+        bubble('error', 'Could not send: ' + err.message + '. Your message was not saved — try again.');
+        if (!input.value) { input.value = text; autoGrow(); }
+        scrollBottom();
+      }).then(function () {
+        setSending(false);
+        input.focus();
+      });
+    });
+
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (form.requestSubmit) form.requestSubmit();
+        else form.dispatchEvent(new Event('submit', { cancelable: true }));
+      }
+    });
+  }
+
+  function addSidebarItem(href, title) {
+    var list = document.getElementById('sideList');
+    if (!list) return;
+    var empty = list.querySelector('.side-empty');
+    if (empty) empty.remove();
+    var oldActive = list.querySelector('.side-item.active');
+    if (oldActive) oldActive.classList.remove('active');
+    var a = document.createElement('a');
+    a.className = 'side-item active';
+    a.href = href;
+    a.textContent = title;
+    a.title = title;
+    list.insertBefore(a, list.firstChild);
+    while (list.children.length > 20) list.removeChild(list.lastChild);
   }
 </script>
 {% endblock %}

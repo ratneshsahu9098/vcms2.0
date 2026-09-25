@@ -250,6 +250,7 @@ a:hover { text-decoration: underline; }
   margin-bottom: 18px;
 }
 .search-input { flex: 1; min-width: 220px; }
+.contact-input { flex: 0 1 170px; min-width: 150px; }
 .filter-bar .form-select { max-width: 180px; }
 
 /* ---------- Tables ---------- */
@@ -520,3 +521,98 @@ code { background: var(--code-bg); color: var(--green); }
   transition: all 0.15s;
 }
 .theme-toggle:hover { color: var(--text); border-color: var(--text-muted); }
+
+/* ---------- Reports ---------- */
+.report-tab-badge {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 6px;
+  margin-left: 6px;
+  border-radius: 10px;
+  background: var(--danger-bg);
+  color: var(--red);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: center;
+}
+.report-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.report-toolbar-left { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.toolbar-label { font-size: 0.8rem; color: var(--text-muted); font-weight: 600; }
+.window-chip {
+  padding: 5px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--charcoal);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.window-chip:hover { color: var(--text); text-decoration: none; }
+.window-chip.active { background: var(--active-bg); color: var(--blue); border-color: var(--active-border); }
+.report-summary { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.sum-chip {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.sum-chip-neutral { background: var(--charcoal); color: var(--text); border: 1px solid var(--border); }
+.days-overdue { color: var(--red); font-weight: 700; }
+.days-soon { color: var(--orange); font-weight: 600; }
+
+/* Print-only report header (hidden on screen) */
+.print-header { display: none; }
+
+@media print {
+  @page { size: A4; margin: 12mm; }
+
+  /* force light theme while printing, whatever the screen theme is */
+  :root, [data-theme="light"], [data-theme="dark"] {
+    --bg: #ffffff;
+    --charcoal: #ffffff;
+    --charcoal-light: #f3f4f6;
+    --border: #d1d5db;
+    --text: #111827;
+    --text-muted: #4b5563;
+    --row-hover: transparent;
+    --shadow: transparent;
+  }
+
+  body { background: #fff !important; color: #111 !important; }
+
+  .sidebar, .topbar, .report-tabs, .no-print, .flash-stack { display: none !important; }
+  .app-shell { display: block; }
+  .main-area { margin-left: 0; }
+  .content { padding: 0; max-width: none; }
+  .panel { border: 0; box-shadow: none; padding: 0; margin: 0; background: transparent; }
+
+  /* report letterhead */
+  .print-header { display: block; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 2px solid #111827; }
+  .print-org { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #6b7280; }
+  .print-title { font-size: 19px; margin: 4px 0 3px; color: #111827; }
+  .print-meta { font-size: 11.5px; color: #4b5563; }
+
+  /* tables: fit A4, bordered, repeat headers across pages */
+  .table-wrap { overflow: visible !important; border: 0; border-radius: 0; }
+  .table-main { min-width: 0 !important; width: 100% !important; background: transparent; }
+  .table-main th { position: static !important; background: #f3f4f6 !important; border: 1px solid #d1d5db; }
+  .table-main td { border: 1px solid #d1d5db; padding: 6px 8px; white-space: normal; }
+  .table-main tbody tr:hover { background: transparent; }
+  thead { display: table-header-group; }
+
+  tr, .report-group-title, .report-toolbar { page-break-inside: avoid; break-inside: avoid; }
+  .report-group-title { page-break-after: avoid; break-after: avoid; margin-top: 12px; }
+
+  a { color: inherit; text-decoration: none; }
+
+  /* keep status badge colors on paper */
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

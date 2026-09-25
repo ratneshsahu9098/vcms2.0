@@ -4,14 +4,19 @@
 
 {% block content %}
 <div class="panel">
-  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-    <h3 class="panel-title" style="margin:0;"><i class="fa-solid fa-clock-rotate-left"></i> Chat History</h3>
-    <a href="{{ url_for('ai.ai_chat_new') }}" class="btn btn-primary btn-sm"><i class="fa-solid fa-plus"></i> New Chat</a>
+  <div class="hist-head">
+    <h3 class="panel-title"><i class="fa-solid fa-clock-rotate-left"></i> Chat History</h3>
+    <div class="hist-head-actions">
+      {% if sessions %}
+      <input type="search" id="histSearch" class="form-control hist-search" placeholder="Search conversations…">
+      {% endif %}
+      <a href="{{ url_for('ai.ai_chat_new') }}" class="btn btn-primary btn-sm"><i class="fa-solid fa-plus"></i> New Chat</a>
+    </div>
   </div>
 
   {% if sessions %}
   <div class="table-wrap">
-    <table class="table-main">
+    <table class="table-main" id="histTable">
       <thead>
         <tr>
           <th>Conversation</th>
@@ -24,10 +29,14 @@
       <tbody>
         {% for s in sessions %}
         <tr>
-          <td style="font-weight:600; color:var(--text);">{{ s.title }}</td>
-          <td>{{ s.message_count }}</td>
-          <td>{{ s.created_at }}</td>
-          <td>{{ s.updated_at }}</td>
+          <td class="hist-title">
+            <a href="{{ url_for('ai.ai_chat', session_id=s.id) }}">{{ s.title }}</a>
+          </td>
+          <td><span class="hist-count">{{ s.message_count }}</span></td>
+          <td class="hist-when">{{ s.created_at.strftime('%d %b %Y, %I:%M %p') }}</td>
+          <td class="hist-when" data-epoch="{{ s.updated_at.strftime('%Y-%m-%dT%H:%M:%S') }}">
+            {{ s.updated_at.strftime('%d %b %Y, %I:%M %p') }}
+          </td>
           <td class="actions-cell">
             <a href="{{ url_for('ai.ai_chat', session_id=s.id) }}" title="Open"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>
             <form method="POST" class="inline-form" action="{{ url_for('ai.ai_chat_delete', session_id=s.id) }}"
@@ -41,8 +50,71 @@
       </tbody>
     </table>
   </div>
+  <p class="hist-noresult" id="histNoResult" style="display:none;">No conversations match your search.</p>
   {% else %}
-  <p class="empty-hint">No chat history yet. Start a conversation with the AI Assistant.</p>
+  <div class="hist-empty">
+    <i class="fa-solid fa-comments"></i>
+    <p>No chat history yet.</p>
+    <a href="{{ url_for('ai.ai_chat') }}" class="btn btn-primary btn-sm"><i class="fa-solid fa-plus"></i> Start a conversation</a>
+  </div>
   {% endif %}
 </div>
+
+<style>
+  .hist-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .hist-head .panel-title { margin: 0; }
+  .hist-head-actions { display: flex; gap: 10px; align-items: center; }
+  .hist-search { max-width: 240px; font-size: .85rem; }
+  .hist-title a { color: var(--text); font-weight: 600; text-decoration: none; }
+  .hist-title a:hover { color: var(--blue); }
+  .hist-count {
+    display: inline-block; min-width: 26px; text-align: center; padding: 2px 8px;
+    border-radius: 10px; background: var(--charcoal-light); border: 1px solid var(--border);
+    font-size: .75rem; font-weight: 700; color: var(--text-muted);
+  }
+  .hist-when { color: var(--text-muted); font-size: .82rem; white-space: nowrap; }
+  .hist-when .rel { display: block; font-size: .72rem; color: var(--blue); }
+  .hist-empty { text-align: center; padding: 40px 20px; color: var(--text-muted); }
+  .hist-empty i { font-size: 2.2rem; color: var(--text-muted); margin-bottom: 10px; }
+  .hist-empty p { margin: 0 0 14px; }
+  .hist-noresult { color: var(--text-muted); font-size: .85rem; padding: 12px 4px; margin: 0; }
+</style>
+
+<script>
+  (function () {
+    var search = document.getElementById('histSearch');
+    var table = document.getElementById('histTable');
+    if (search && table) {
+      var rows = Array.prototype.slice.call(table.querySelectorAll('tbody tr'));
+      var noResult = document.getElementById('histNoResult');
+      search.addEventListener('input', function () {
+        var q = search.value.trim().toLowerCase();
+        var shown = 0;
+        rows.forEach(function (row) {
+          var match = !q || row.textContent.toLowerCase().indexOf(q) !== -1;
+          row.style.display = match ? '' : 'none';
+          if (match) shown++;
+        });
+        if (noResult) noResult.style.display = shown ? 'none' : 'block';
+      });
+    }
+
+    /* upgrade absolute timestamps to relative time */
+    document.querySelectorAll('.hist-when[data-epoch]').forEach(function (el) {
+      var t = Date.parse(el.dataset.epoch + 'Z');
+      if (isNaN(t)) return;
+      var mins = Math.round((Date.now() - t) / 60000);
+      var label;
+      if (mins < 1) label = 'just now';
+      else if (mins < 60) label = mins + ' min ago';
+      else if (mins < 1440) label = Math.round(mins / 60) + ' h ago';
+      else if (mins < 10080) label = Math.round(mins / 1440) + ' d ago';
+      else return; /* keep the absolute date for old chats */
+      var rel = document.createElement('span');
+      rel.className = 'rel';
+      rel.textContent = label;
+      el.appendChild(rel);
+    });
+  })();
+</script>
 {% endblock %}

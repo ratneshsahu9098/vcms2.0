@@ -17,6 +17,7 @@ IMPORT_COLUMN_MAP = {
     "fitness expiry": "fitness_expiry",
     "permit": "permit_expiry",
     "permit expiry": "permit_expiry",
+    "permit from": "permit_from",
     "tax": "tax_expiry",
     "tax expiry": "tax_expiry",
     "tax from": "tax_from",

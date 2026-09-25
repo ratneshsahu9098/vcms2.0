@@ -3,7 +3,7 @@ from datetime import datetime
 
 from app.models import Vehicle
 from app.services import email_service
-from app.utils import parse_date
+from app.utils import parse_date, to_float
 
 
 def update_vehicle_from_record(vehicle, record):
@@ -36,6 +36,10 @@ def update_vehicle_from_record(vehicle, record):
         parsed = parse_date(record.get("permit_expiry"))
         if parsed:
             vehicle.permit_expiry = parsed
+    if "permit_from" in record:
+        parsed = parse_date(record.get("permit_from"))
+        if parsed:
+            vehicle.permit_from = parsed
     if "tax_from" in record:
         parsed = parse_date(record.get("tax_from"))
         if parsed:
@@ -48,8 +52,9 @@ def update_vehicle_from_record(vehicle, record):
         vehicle.tax_mode = str(record.get("tax_mode", "") or vehicle.tax_mode or "").strip()
     if "tax_amount" in record:
         val = record.get("tax_amount")
-        if val is not None:
-            vehicle.tax_amount = float(val or 0)
+        text = "" if val is None else str(val).strip()
+        if text and text.lower() != "nan":
+            vehicle.tax_amount = to_float(val, vehicle.tax_amount or 0.0)
     if "insurance_expiry" in record:
         parsed = parse_date(record.get("insurance_expiry"))
         if parsed:

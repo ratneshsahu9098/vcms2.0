@@ -209,7 +209,12 @@ def delete_old_backups(service=None, folder_id=None):
 def start_oauth_flow():
     if not os.path.exists(CLIENT_SECRET_FILE):
         return None, "client_secret.json not found. Please download it from Google Cloud Console."
-    flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
+    try:
+        flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
+    except ValueError:
+        return None, ("client_secret.json is not an OAuth Desktop client (wrong type, "
+                      "e.g. a service account key). Download the OAuth client ID JSON "
+                      "with Application type: Desktop app and replace the file.")
     return flow, None
 
 

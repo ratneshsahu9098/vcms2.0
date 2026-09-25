@@ -15,15 +15,16 @@
 
 {% if not parsed_data %}
 <div class="panel">
-  <h3 style="color:var(--text); margin:0 0 16px;"><i class="fa-solid fa-cloud-arrow-up" style="color:var(--blue);"></i> Upload Document</h3>
-  <p style="color:var(--text-muted); margin-bottom:16px;">Upload an image or PDF of RC, Insurance, PUC, or Fitness certificate. AI will extract vehicle data automatically.</p>
+  <h3 class="sec-title"><i class="fa-solid fa-cloud-arrow-up" style="color:var(--blue);"></i> Upload Document</h3>
+  <p class="sec-sub">Upload an image or PDF of RC, Insurance, PUC, or Fitness certificate. AI will extract vehicle data automatically.</p>
   <form method="POST" enctype="multipart/form-data" class="upload-zone" id="uploadForm">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="upload-area" id="dropZone" onclick="document.getElementById('fileInput').click()">
-      <i class="fa-solid fa-image" style="font-size:2.5rem; color:var(--text-muted); margin-bottom:12px;"></i>
-      <p style="color:var(--text-muted); margin:0;">Click or drag an image here</p>
-      <p style="color:var(--text-muted); font-size:0.8rem; margin:6px 0 0;">Supports: JPG, PNG, BMP, TIFF, PDF</p>
-      <input type="file" name="document" id="fileInput" accept="image/*,.pdf,application/pdf" style="display:none;" required>
+    <div class="upload-area" id="dropZone">
+      <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
+      <p class="upload-main"><strong>Click or drag a document here</strong></p>
+      <p class="upload-hint">Supports: JPG, PNG, BMP, TIFF, PDF</p>
+      <input type="file" name="document" id="fileInput" accept="image/*,.pdf,application/pdf" required>
+      <span class="upload-name" id="fileName"></span>
     </div>
     <div id="preview" style="display:none; margin-top:16px;">
       <img id="previewImg" style="max-width:100%; max-height:300px; border-radius:8px; border:1px solid var(--border);">
@@ -34,6 +35,11 @@
       </button>
     </div>
   </form>
+  <div class="scan-overlay" id="scanOverlay">
+    <i class="fa-solid fa-spinner fa-spin scan-spin"></i>
+    <h4>Scanning document…</h4>
+    <p>Reading text with OCR, then extracting fields with AI. This can take a moment.</p>
+  </div>
 </div>
 
 {% if ocr_text %}
@@ -46,32 +52,32 @@
 
 {% if last_scans %}
 <div class="panel" style="margin-top:18px;">
-  <h3 style="color:var(--text); margin:0 0 16px;"><i class="fa-solid fa-clock-rotate-left" style="color:var(--blue);"></i> Recent Scans</h3>
-  <div style="overflow-x:auto;">
-    <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+  <h3 class="sec-title"><i class="fa-solid fa-clock-rotate-left" style="color:var(--blue);"></i> Recent Scans</h3>
+  <div class="table-wrap">
+    <table class="table-main">
       <thead>
-        <tr style="border-bottom:2px solid var(--border);">
-          <th style="text-align:left; padding:8px 10px; color:var(--text);">Vehicle No</th>
-          <th style="text-align:left; padding:8px 10px; color:var(--text);">Owner</th>
-          <th style="text-align:left; padding:8px 10px; color:var(--text);">Document</th>
-          <th style="text-align:left; padding:8px 10px; color:var(--text);">Scanned At</th>
-          <th style="text-align:center; padding:8px 10px; color:var(--text);">Actions</th>
+        <tr>
+          <th>Vehicle No</th>
+          <th>Owner</th>
+          <th>Document</th>
+          <th>Scanned At</th>
+          <th style="text-align:center;">Actions</th>
         </tr>
       </thead>
       <tbody>
         {% for scan in last_scans %}
-        <tr style="border-bottom:1px solid var(--border);">
-          <td style="padding:8px 10px; color:var(--text); font-weight:500;">{{ scan.vehicle_number or '-' }}</td>
-          <td style="padding:8px 10px; color:var(--text-muted);">{{ scan.owner_name or '-' }}</td>
-          <td style="padding:8px 10px; color:var(--text-muted);">{{ scan.document_type or '-' }}</td>
-          <td style="padding:8px 10px; color:var(--text-muted);">{{ scan.scanned_at.strftime('%d %b %Y, %I:%M %p') if scan.scanned_at else '-' }}</td>
-          <td style="padding:8px 10px; text-align:center; white-space:nowrap;">
-            <a href="{{ url_for('ai.ai_parse_view_scan', scan_id=scan.id) }}" class="btn btn-sm btn-outline-secondary" style="font-size:0.78rem; padding:3px 10px; text-decoration:none;" title="View scan details">
+        <tr>
+          <td style="font-weight:500;">{{ scan.vehicle_number or '-' }}</td>
+          <td>{{ scan.owner_name or '-' }}</td>
+          <td>{{ scan.document_type or '-' }}</td>
+          <td>{{ scan.scanned_at.strftime('%d %b %Y, %I:%M %p') if scan.scanned_at else '-' }}</td>
+          <td style="text-align:center; white-space:nowrap;">
+            <a href="{{ url_for('ai.ai_parse_view_scan', scan_id=scan.id) }}" class="btn btn-sm btn-outline-secondary" title="View scan details">
               <i class="fa-solid fa-eye"></i> View
             </a>
             <form method="POST" action="{{ url_for('ai.ai_parse_edit_scan', scan_id=scan.id) }}" style="display:inline;">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button type="submit" class="btn btn-sm btn-outline-primary" style="font-size:0.78rem; padding:3px 10px;" title="Edit this scan data again">
+              <button type="submit" class="btn btn-sm btn-outline-primary" title="Edit this scan data again">
                 <i class="fa-solid fa-pen"></i> Edit
               </button>
             </form>
@@ -115,46 +121,46 @@
 <input type="hidden" name="scan_id" value="{{ current_scan_id or '' }}">
 {% if existing_vehicle and comparison %}
 <div class="panel" style="margin-bottom:18px;">
-  <h4 style="color:var(--text); margin:0 0 12px;"><i class="fa-solid fa-code-compare" style="color:var(--blue);"></i> Field Comparison</h4>
-  <p style="color:var(--text-muted); margin:0 0 16px; font-size:0.85rem;">
-    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--green); vertical-align:middle; margin-right:4px;"></span> Auto-fill (empty in DB)
+  <h4 class="sec-title"><i class="fa-solid fa-code-compare" style="color:var(--blue);"></i> Field Comparison</h4>
+  <p class="cmp-legend">
+    <span class="cmp-dot dot-green"></span> Auto-fill (empty in DB)
     &nbsp;&nbsp;
-    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--yellow); vertical-align:middle; margin-right:4px;"></span> Changed — accept to update
+    <span class="cmp-dot dot-yellow"></span> Changed — accept to update
     &nbsp;&nbsp;
-    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--text-muted); vertical-align:middle; margin-right:4px;"></span> Same — no action
+    <span class="cmp-dot dot-gray"></span> Same — no action
   </p>
 
-  <div class="compare-table-wrap" style="overflow-x:auto;">
-    <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+  <div class="table-wrap">
+    <table class="table-main cmp-table">
       <thead>
-        <tr style="border-bottom:2px solid var(--border);">
-          <th style="text-align:left; padding:8px 10px; color:var(--text);">Field</th>
-          <th style="text-align:left; padding:8px 10px; color:var(--text);">Existing (DB)</th>
-          <th style="text-align:left; padding:8px 10px; color:var(--text);">Scanned</th>
-          <th style="text-align:center; padding:8px 10px; color:var(--text);">Status</th>
-          <th style="text-align:center; padding:8px 10px; color:var(--text);">Action</th>
+        <tr>
+          <th>Field</th>
+          <th>Existing (DB)</th>
+          <th>Scanned</th>
+          <th style="text-align:center;">Status</th>
+          <th style="text-align:center;">Action</th>
         </tr>
       </thead>
       <tbody>
         {% for item in comparison %}
-        <tr style="border-bottom:1px solid var(--border); {% if item.status == 'same' %}opacity:0.55;{% endif %}">
-          <td style="padding:8px 10px; color:var(--text); font-weight:500;">{{ item.label }}</td>
-          <td style="padding:8px 10px; color:var(--text-muted);">{{ item.existing_value }}</td>
-          <td style="padding:8px 10px; color:var(--text);">{{ item.scanned_value }}</td>
-          <td style="padding:8px 10px; text-align:center;">
+        <tr class="cmp-row {{ 'cmp-same' if item.status == 'same' }}">
+          <td style="font-weight:500;">{{ item.label }}</td>
+          <td class="cmp-old">{{ item.existing_value }}</td>
+          <td>{{ item.scanned_value }}</td>
+          <td style="text-align:center;">
             {% if item.status == 'empty' %}
-              <span style="background:rgba(34,197,94,0.15); color:var(--green); padding:3px 10px; border-radius:12px; font-size:0.78rem; font-weight:500;">Auto-fill</span>
+              <span class="cmp-pill pill-auto">Auto-fill</span>
             {% elif item.status == 'changed' %}
-              <span style="background:rgba(234,179,8,0.15); color:var(--yellow); padding:3px 10px; border-radius:12px; font-size:0.78rem; font-weight:500;">Changed</span>
+              <span class="cmp-pill pill-changed">Changed</span>
             {% else %}
-              <span style="background:rgba(156,163,175,0.15); color:var(--text-muted); padding:3px 10px; border-radius:12px; font-size:0.78rem; font-weight:500;">Same</span>
+              <span class="cmp-pill pill-same">Same</span>
             {% endif %}
           </td>
-          <td style="padding:8px 10px; text-align:center;">
+          <td style="text-align:center;">
             {% if item.status == 'empty' %}
-              <input type="checkbox" checked disabled style="accent-color:var(--green); cursor:not-allowed;" title="Auto-fill">
+              <input type="checkbox" checked disabled class="chk-auto" title="Auto-fill">
             {% elif item.status == 'changed' %}
-              <input type="checkbox" name="accepted_fields" value="{{ item.field }}" class="accept-check" style="accent-color:var(--yellow); cursor:pointer;" title="Accept this update">
+              <input type="checkbox" name="accepted_fields" value="{{ item.field }}" class="accept-check chk-changed" title="Accept this update">
             {% else %}
               <span style="color:var(--text-muted); font-size:0.8rem;">—</span>
             {% endif %}
@@ -165,7 +171,7 @@
     </table>
   </div>
 
-  <div style="margin-top:12px; font-size:0.82rem; color:var(--text-muted);">
+  <div class="cmp-note">
     <i class="fa-solid fa-info-circle"></i> Empty fields will be auto-filled. Check the boxes above for changed fields you want to update, then click <strong>Apply Updates</strong>.
   </div>
 </div>
@@ -173,6 +179,9 @@
 
   <div class="detail-card">
     <h4 style="color:var(--text); margin:0 0 16px;">Extracted Vehicle Information</h4>
+
+    <div class="form-section">
+    <h5 class="form-subhead"><i class="fa-solid fa-id-card" style="color:var(--blue);"></i> Identity &amp; Owner</h5>
     <div class="form-grid">
       <div class="form-group">
         <label>Vehicle Number *</label>
@@ -206,6 +215,12 @@
         <label>Registration Date</label>
         <input type="date" name="registration_date" class="form-control" value="{{ parsed_data.registration_date or '' }}">
       </div>
+    </div>
+    </div>
+
+    <div class="form-section">
+    <h5 class="form-subhead"><i class="fa-solid fa-calendar-xmark" style="color:var(--orange);"></i> Document Expiry</h5>
+    <div class="form-grid">
       <div class="form-group">
         <label>PUC Expiry</label>
         <input type="date" name="puc_expiry" class="form-control" value="{{ parsed_data.puc_expiry or '' }}">
@@ -214,6 +229,12 @@
         <label>Fitness Expiry</label>
         <input type="date" name="fitness_expiry" class="form-control" value="{{ parsed_data.fitness_expiry or '' }}">
       </div>
+    </div>
+    </div>
+
+    <div class="form-section">
+    <h5 class="form-subhead"><i class="fa-solid fa-file-contract" style="color:var(--yellow);"></i> Permit</h5>
+    <div class="form-grid">
       <div class="form-group">
         <label>Permit From</label>
         <input type="date" name="permit_from" class="form-control" value="{{ parsed_data.permit_from or '' }}">
@@ -230,6 +251,12 @@
         <label>Permit Address</label>
         <input type="text" name="permit_address" class="form-control" value="{{ parsed_data.permit_address or '' }}">
       </div>
+    </div>
+    </div>
+
+    <div class="form-section">
+    <h5 class="form-subhead"><i class="fa-solid fa-shield-halved" style="color:var(--green);"></i> Insurance</h5>
+    <div class="form-grid">
       <div class="form-group">
         <label>Insurance Expiry</label>
         <input type="date" name="insurance_expiry" class="form-control" value="{{ parsed_data.insurance_expiry or '' }}">
@@ -242,6 +269,12 @@
         <label>Policy Number</label>
         <input type="text" name="policy_number" class="form-control" value="{{ parsed_data.policy_number or '' }}">
       </div>
+    </div>
+    </div>
+
+    <div class="form-section">
+    <h5 class="form-subhead"><i class="fa-solid fa-indian-rupee-sign" style="color:var(--blue);"></i> Tax</h5>
+    <div class="form-grid">
       <div class="form-group">
         <label>Tax Period From</label>
         <input type="date" name="tax_from" class="form-control" value="{{ parsed_data.tax_from or '' }}">
@@ -265,7 +298,9 @@
         <input type="number" step="0.01" name="tax_amount" class="form-control" value="{{ parsed_data.tax_amount if parsed_data.tax_amount else '' }}">
       </div>
     </div>
-    <div class="form-actions">
+    </div>
+
+    <div class="form-actions form-actions-sticky">
       {% if existing_vehicle %}
       <button type="submit" class="btn btn-primary" id="submitBtn">
         {% if comparison %}<i class="fa-solid fa-check-double"></i> Apply Updates{% else %}<i class="fa-solid fa-pen-to-square"></i> Update Vehicle{% endif %}
@@ -282,11 +317,66 @@
 {% endif %}
 
 <style>
+  .sec-title { color: var(--text); margin: 0 0 6px; font-size: 1rem; display: flex; align-items: center; gap: 8px; }
+  .sec-sub { color: var(--text-muted); margin: 0 0 16px; }
+
   .upload-area {
-    border:2px dashed var(--border); border-radius:12px; padding:40px 20px; text-align:center;
-    cursor:pointer; transition:border-color 0.2s;
+    position: relative; border: 2px dashed var(--border); border-radius: 12px; padding: 40px 20px;
+    text-align: center; cursor: pointer; transition: border-color .15s, background .15s;
+    background: var(--charcoal-light);
   }
-  .upload-area:hover, .upload-area.dragover { border-color:var(--blue); }
+  .upload-area:hover, .upload-area.dragover { border-color: var(--blue); background: var(--active-bg); }
+  .upload-area input[type="file"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+  .upload-icon { display: block; font-size: 2.4rem; color: var(--blue); margin-bottom: 10px; }
+  .upload-main { margin: 0; color: var(--text); }
+  .upload-hint { margin: 6px 0 0; font-size: .8rem; color: var(--text-muted); }
+  .upload-name { display: block; margin-top: 10px; font-size: .85rem; font-weight: 600; color: var(--blue); }
+  .upload-name:empty { display: none; }
+
+  .scan-overlay {
+    position: fixed; inset: 0; z-index: 200; display: none;
+    background: rgba(10, 14, 20, .82); backdrop-filter: blur(3px);
+    align-items: center; justify-content: center; flex-direction: column; gap: 14px;
+    text-align: center; padding: 20px;
+  }
+  .scan-overlay.show { display: flex; }
+  .scan-spin { font-size: 2.4rem; color: var(--blue); }
+  .scan-overlay h4 { color: #fff; margin: 0; }
+  .scan-overlay p { color: #aab4c0; margin: 0; font-size: .88rem; max-width: 380px; }
+
+  .form-section { margin-bottom: 22px; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
+  .form-section:last-of-type { border-bottom: none; }
+  .form-subhead {
+    display: flex; align-items: center; gap: 8px; font-size: .9rem; font-weight: 700;
+    color: var(--text); margin: 0 0 14px;
+  }
+
+  .form-actions-sticky {
+    position: sticky; bottom: 0; z-index: 6;
+    margin-top: 6px; padding: 12px 2px 2px;
+    background: var(--charcoal); border-top: 1px solid var(--border);
+  }
+
+  .cmp-legend { color: var(--text-muted); margin: 0 0 16px; font-size: .85rem; }
+  .cmp-dot {
+    display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+    vertical-align: middle; margin-right: 4px;
+  }
+  .dot-green { background: var(--green); }
+  .dot-yellow { background: var(--yellow); }
+  .dot-gray { background: var(--text-muted); }
+  .cmp-row.cmp-same { opacity: .55; }
+  .cmp-old { color: var(--text-muted); }
+  .cmp-pill {
+    display: inline-block; padding: 3px 10px; border-radius: 12px;
+    font-size: .78rem; font-weight: 500;
+  }
+  .pill-auto { background: rgba(34, 197, 94, .15); color: var(--green); }
+  .pill-changed { background: rgba(234, 179, 8, .15); color: var(--yellow); }
+  .pill-same { background: rgba(156, 163, 175, .15); color: var(--text-muted); }
+  .chk-auto { accent-color: var(--green); cursor: not-allowed; }
+  .chk-changed { accent-color: var(--yellow); cursor: pointer; }
+  .cmp-note { margin-top: 12px; font-size: .82rem; color: var(--text-muted); }
 </style>
 
 {% endblock %}
@@ -298,6 +388,9 @@
   const preview = document.getElementById('preview');
   const previewImg = document.getElementById('previewImg');
   const submitBtn = document.getElementById('submitBtn');
+  const fileName = document.getElementById('fileName');
+  const uploadForm = document.getElementById('uploadForm');
+  const scanOverlay = document.getElementById('scanOverlay');
 
   if (dropZone) {
     dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
@@ -309,11 +402,13 @@
       showPreview(fileInput.files[0]);
     });
     fileInput.addEventListener('change', () => showPreview(fileInput.files[0]));
+    fileInput.addEventListener('click', e => e.stopPropagation());  /* avoid double-open loop */
   }
 
   function showPreview(file) {
     if (!file) return;
     submitBtn.disabled = false;
+    fileName.textContent = file.name + ' · ' + Math.max(1, Math.round(file.size / 1024)) + ' KB';
     const isPdf = (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'));
     if (isPdf) {
       previewImg.style.display = 'none';
@@ -327,6 +422,16 @@
     const reader = new FileReader();
     reader.onload = e => { previewImg.src = e.target.result; preview.style.display = 'block'; };
     reader.readAsDataURL(file);
+  }
+
+  if (uploadForm && scanOverlay) {
+    uploadForm.addEventListener('submit', e => {
+      if (!fileInput.files.length) { e.preventDefault(); return; }
+      scanOverlay.classList.add('show');
+      submitBtn.disabled = true;
+    });
+    /* hide instantly when restored from bfcache */
+    window.addEventListener('pageshow', () => scanOverlay.classList.remove('show'));
   }
 </script>
 {% endblock %}

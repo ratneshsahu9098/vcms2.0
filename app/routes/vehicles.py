@@ -31,9 +31,18 @@ def vehicle_list():
                 Vehicle.engine_number.ilike(like),
                 Vehicle.owner_name.ilike(like),
                 Vehicle.mobile_number.ilike(like),
+                Vehicle.owner_email.ilike(like),
                 Vehicle.policy_number.ilike(like),
             )
         )
+
+    mobile = request.args.get("mobile", "").strip()
+    if mobile:
+        query = query.filter(Vehicle.mobile_number.ilike(f"%{mobile}%"))
+
+    email = request.args.get("email", "").strip()
+    if email:
+        query = query.filter(Vehicle.owner_email.ilike(f"%{email}%"))
 
     vehicle_type = request.args.get("vehicle_type", "").strip()
     if vehicle_type:
@@ -156,6 +165,21 @@ def add_vehicle():
 
 # ---- Edit vehicle --------------------------------------------------------
 
+EXPIRY_FIELDS = ["puc_expiry", "fitness_expiry", "permit_expiry", "tax_expiry",
+                 "insurance_expiry", "national_permit_expiry", "state_permit_expiry"]
+
+
+def _expiry_status(form):
+    """Per-field expiry status badges for the edit form (live-updated by JS)."""
+    out = {}
+    for f in EXPIRY_FIELDS:
+        val = parse_date(form.get(f))
+        label, css = Vehicle.status_for(val)
+        out[f] = {"label": label, "class": css,
+                  "days": (val - date.today()).days if val else None}
+    return out
+
+
 @bp.route("/vehicles/<int:vehicle_id>/edit", methods=["GET", "POST"])
 @login_required
 def edit_vehicle(vehicle_id):
@@ -167,7 +191,8 @@ def edit_vehicle(vehicle_id):
             for e in errors:
                 flash(e, "error")
             districts = [r[0] for r in db.session.query(Vehicle.district).distinct() if r[0]]
-            return render_template("edit_vehicle.html", vehicle=vehicle, form=request.form, districts=districts)
+            return render_template("edit_vehicle.html", vehicle=vehicle, form=request.form,
+                                   districts=districts, expiry_status=_expiry_status(request.form))
 
         vehicle.vehicle_number = request.form["vehicle_number"].strip().upper()
         vehicle.chassis_number = request.form["chassis_number"].strip().upper()
@@ -199,10 +224,12 @@ def edit_vehicle(vehicle_id):
 
         db.session.commit()
         flash(f"Vehicle {vehicle.vehicle_number} updated successfully.", "success")
-        return redirect(url_for("vehicles.vehicle_list"))
+        return redirect(url_for("vehicles.view_vehicle", vehicle_id=vehicle.id))
 
     districts = [r[0] for r in db.session.query(Vehicle.district).distinct() if r[0]]
-    return render_template("edit_vehicle.html", vehicle=vehicle, form=vehicle.to_dict(), districts=districts)
+    form = vehicle.to_dict()
+    return render_template("edit_vehicle.html", vehicle=vehicle, form=form,
+                           districts=districts, expiry_status=_expiry_status(form))
 
 @bp.route("/vehicles/delete-all", methods=["POST"])
 @login_required
