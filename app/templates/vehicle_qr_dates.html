@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ vehicle.vehicle_number }} - QR & Dates</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', sans-serif; background: #f4f6f9; display: flex; justify-content: center; padding: 20px; }
+  .qr-dates-card { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); max-width: 500px; width: 100%; overflow: hidden; }
+  .qr-section { text-align: center; padding: 30px 20px 20px; border-bottom: 1px solid #eee; }
+  .qr-section img { width: 200px; height: 200px; border: 2px solid #e5e7eb; border-radius: 8px; }
+  .qr-section h2 { margin-top: 14px; font-size: 1.5rem; color: #1e293b; }
+  .qr-section .subtitle { color: #64748b; font-size: 0.9rem; margin-top: 4px; }
+  .qr-section .report-id { color: #94a3b8; font-size: 0.8rem; margin-top: 6px; font-family: monospace; }
+  .dates-section { padding: 20px 24px 24px; }
+  .dates-section h3 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; margin-bottom: 14px; }
+  .date-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f1f5f9; }
+  .date-row:last-child { border-bottom: none; }
+  .date-row .label { font-weight: 600; color: #334155; font-size: 0.95rem; }
+  .date-row .value { font-size: 0.9rem; color: #1e293b; }
+  .date-row .days { font-size: 0.8rem; font-weight: 600; margin-left: 8px; padding: 2px 8px; border-radius: 10px; }
+  .days.valid { background: #dcfce7; color: #166534; }
+  .days.warning { background: #fef3c7; color: #92400e; }
+  .days.expired { background: #fee2e2; color: #991b1b; }
+  .days.na { background: #f1f5f9; color: #94a3b8; }
+  .back-btn { display: block; text-align: center; padding: 14px; background: #f8fafc; border-top: 1px solid #eee; }
+  .back-btn a { text-decoration: none; color: #3b82f6; font-weight: 600; font-size: 0.9rem; }
+  .back-btn a:hover { text-decoration: underline; }
+  .no-print { display: flex; gap: 10px; justify-content: center; padding: 14px; background: #f8fafc; border-top: 1px solid #eee; }
+  .no-print .btn { padding: 8px 18px; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer; border: 1px solid #d1d5db; background: #fff; color: #374151; text-decoration: none; }
+  .no-print .btn:hover { background: #f3f4f6; }
+  .no-print .btn-primary { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+  .no-print .btn-primary:hover { background: #2563eb; }
+  @media print {
+    body { background: #fff; padding: 0; display: block; }
+    .qr-dates-card { box-shadow: none; border: none; max-width: 100%; border-radius: 0; }
+    .no-print, .back-btn { display: none !important; }
+    .qr-section { padding: 20px; }
+    .qr-section img { width: 160px; height: 160px; }
+    .qr-section h2 { font-size: 1.3rem; }
+    .dates-section { padding: 16px 20px; }
+    .date-row { padding: 6px 0; }
+    .date-row .label { font-size: 0.85rem; }
+    .date-row .value { font-size: 0.85rem; }
+    .date-row .days { font-size: 0.75rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="no-print">
+  <button class="btn btn-primary" onclick="window.print()"><i class="fa-solid fa-print"></i> Print</button>
+  <button class="btn" onclick="window.close()"><i class="fa-solid fa-xmark"></i> Close</button>
+</div>
+
+<div class="qr-dates-card">
+  <div class="qr-section">
+    <img src="{{ url_for('vehicles.vehicle_qr', vehicle_id=vehicle.id) }}" alt="QR Code">
+    <h2>{{ vehicle.vehicle_number }}</h2>
+    <div class="subtitle">{{ vehicle.owner_name }}{% if vehicle.vehicle_type %} · {{ vehicle.vehicle_type }}{% endif %}{% if vehicle.district %} · {{ vehicle.district }}{% endif %}</div>
+    {% if vehicle.created_at %}
+    <div class="report-id">VC-{{ vehicle.created_at.strftime('%Y%m%d') }}-{{ '%04d'|format(vehicle.id) }}</div>
+    {% endif %}
+  </div>
+
+  <div class="dates-section">
+    <h3>Document Expiry Dates</h3>
+    {% for label, info in statuses.items() %}
+    <div class="date-row">
+      <span class="label">{{ label }}</span>
+      <span>
+        <span class="value">{{ info.expiry.strftime('%d-%m-%Y') if info.expiry else 'Not Set' }}</span>
+        {% if info.expiry %}
+          {% set days_left = (info.expiry - today).days %}
+          {% if days_left < 0 %}
+            <span class="days expired">{{ days_left|abs }}d ago</span>
+          {% elif days_left <= 7 %}
+            <span class="days warning">{{ days_left }}d</span>
+          {% elif days_left <= 30 %}
+            <span class="days warning">{{ days_left }}d</span>
+          {% else %}
+            <span class="days valid">{{ days_left }}d</span>
+          {% endif %}
+        {% else %}
+          <span class="days na">N/A</span>
+        {% endif %}
+      </span>
+    </div>
+    {% endfor %}
+
+    <div style="margin-top: 18px; padding-top: 14px; border-top: 2px solid #e2e8f0;">
+      <h3>Additional Dates</h3>
+      <div class="date-row">
+        <span class="label">Registration</span>
+        <span class="value">{{ vehicle.registration_date.strftime('%d-%m-%Y') if vehicle.registration_date else 'Not Set' }}</span>
+      </div>
+      {% if vehicle.national_permit_expiry %}
+      <div class="date-row">
+        <span class="label">National Permit</span>
+        <span class="value">{{ vehicle.national_permit_expiry.strftime('%d-%m-%Y') }}</span>
+      </div>
+      {% endif %}
+      {% if vehicle.state_permit_expiry %}
+      <div class="date-row">
+        <span class="label">State Permit</span>
+        <span class="value">{{ vehicle.state_permit_expiry.strftime('%d-%m-%Y') }}</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="back-btn">
+    <a href="{{ url_for('vehicles.view_vehicle', vehicle_id=vehicle.id) }}"><i class="fa-solid fa-arrow-left"></i> Back to Vehicle Details</a>
+  </div>
+</div>
+
+</body>
+</html>

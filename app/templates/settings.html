@@ -1,0 +1,572 @@
+{% extends "layout.html" %}
+{% block title %}Settings{% endblock %}
+{% block page_title %}Settings{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <h3 class="panel-title"><i class="fa-solid fa-gear"></i> Application Settings</h3>
+  <div class="settings-list">
+    <div class="settings-row">
+      <span>Login Required</span>
+      <span class="badge-status {{ 'status-green' if config.LOGIN_REQUIRED else 'status-gray' }}">
+        {{ 'Enabled' if config.LOGIN_REQUIRED else 'Disabled' }}
+      </span>
+    </div>
+    <div class="settings-row">
+      <span>Reminder Windows</span>
+      <span>{{ config.REMINDER_WINDOWS|join(', ') }} days before expiry</span>
+    </div>
+    <div class="settings-row">
+      <span>Database</span>
+      <span class="text-muted">{{ config.SQLALCHEMY_DATABASE_URI }}</span>
+    </div>
+  </div>
+</div>
+
+<div class="panel" style="margin-top:20px;">
+  <h3 class="panel-title"><i class="fa-solid fa-toggle-on"></i> Active AI Provider</h3>
+  <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;">
+    Pick which provider the AI assistant, insights, and document scanner will use.
+  </p>
+  <form method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="panel" value="provider">
+    <div class="provider-options">
+      <label class="provider-option {{ 'active' if ai_settings.get('ai_provider', 'openrouter') != 'google' }}">
+        <input type="radio" name="ai_provider" value="openrouter"
+               {{ 'checked' if ai_settings.get('ai_provider', 'openrouter') != 'google' }}>
+        <i class="fa-solid fa-diagram-project"></i>
+        <span class="provider-name">OpenRouter</span>
+        <span class="provider-desc">One key, many models</span>
+      </label>
+      <label class="provider-option {{ 'active' if ai_settings.get('ai_provider') == 'google' }}">
+        <input type="radio" name="ai_provider" value="google"
+               {{ 'checked' if ai_settings.get('ai_provider') == 'google' }}>
+        <i class="fa-brands fa-google"></i>
+        <span class="provider-name">Google Gemini</span>
+        <span class="provider-desc">Direct Google AI Studio API</span>
+      </label>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> Save Active Provider</button>
+    </div>
+  </form>
+</div>
+
+<div class="panel" style="margin-top:20px;">
+  <h3 class="panel-title"><i class="fa-solid fa-diagram-project"></i> OpenRouter Settings</h3>
+  <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;">
+    Get a free key at <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a>
+  </p>
+  <form method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="panel" value="openrouter">
+    <div class="form-grid">
+      <div class="form-group form-group-full">
+        <label>API Key</label>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <input type="password" name="openrouter_api_key" id="apiKeyInput"
+                 class="form-control" style="flex:1;"
+                 value="{{ ai_settings.openrouter_api_key or '' }}"
+                 placeholder="sk-or-v1-...">
+          <button type="button" class="btn btn-outline-secondary" onclick="toggleKey('apiKeyInput', 'eyeIcon')" title="Show/Hide key">
+            <i class="fa-solid fa-eye" id="eyeIcon"></i>
+          </button>
+        </div>
+      </div>
+      <div class="form-group form-group-full">
+        <label>Quick Select</label>
+        <select class="form-select" id="modelSelect" onchange="selectModel(this.value, 'modelInput')">
+          <option value="">-- Choose a fast model --</option>
+          <option value="google/gemma-3-1b-it:free">Gemma 3 1B (Fastest)</option>
+          <option value="meta-llama/llama-3.2-3b-instruct:free">Llama 3.2 3B (Fast)</option>
+          <option value="qwen/qwen3-8b:free">Qwen3 8B (Balanced)</option>
+          <option value="microsoft/phi-4-reasoning:free">Phi-4 Reasoning</option>
+          <option value="__custom__">Custom (type below)</option>
+        </select>
+      </div>
+      <div class="form-group form-group-full">
+        <label>Model ID</label>
+        <input type="text" name="openrouter_model" id="modelInput" class="form-control"
+               value="{{ ai_settings.openrouter_model or '' }}"
+               placeholder="e.g. google/gemma-3-1b-it:free">
+        <small style="color:var(--text-muted);">Browse all models at <a href="https://openrouter.ai/models" target="_blank">openrouter.ai/models</a></small>
+      </div>
+    </div>
+    <div class="form-actions" style="flex-wrap:wrap;">
+      <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> Save OpenRouter Settings</button>
+      <button type="button" class="btn btn-outline-secondary" onclick="testApi('openrouter', this)">
+        <i class="fa-solid fa-plug"></i> Test Connection
+      </button>
+      <label style="display:flex; align-items:center; gap:6px; color:var(--text-muted); font-size:0.85rem; cursor:pointer; margin-left:8px;">
+        <input type="checkbox" id="debug-openrouter" style="accent-color:var(--blue);"> Debug Mode
+      </label>
+      {% if ai_settings.openrouter_api_key %}
+      <span class="badge-status status-green" style="margin-left:8px;"><i class="fa-solid fa-check-circle"></i> API key configured</span>
+      {% else %}
+      <span class="badge-status status-red" style="margin-left:8px;"><i class="fa-solid fa-xmark-circle"></i> No API key set</span>
+      {% endif %}
+      {% if ai_settings.get('ai_provider', 'openrouter') != 'google' %}
+      <span class="badge-status status-blue" style="margin-left:8px;"><i class="fa-solid fa-star"></i> Active provider</span>
+      {% endif %}
+    </div>
+  </form>
+  <div id="testResult-openrouter" style="display:none; margin-top:16px; padding:14px; border-radius:8px; font-size:0.9rem;"></div>
+  <div id="debugOutput-openrouter" style="display:none; margin-top:12px;"></div>
+</div>
+
+<div class="panel" style="margin-top:20px;">
+  <h3 class="panel-title"><i class="fa-brands fa-google"></i> Google Gemini Settings</h3>
+  <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;">
+    Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a>
+  </p>
+  <form method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="panel" value="google">
+    <div class="form-grid">
+      <div class="form-group form-group-full">
+        <label>API Key</label>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <input type="password" name="google_api_key" id="googleKeyInput"
+                 class="form-control" style="flex:1;"
+                 value="{{ ai_settings.google_api_key or '' }}"
+                 placeholder="AIza...">
+          <button type="button" class="btn btn-outline-secondary" onclick="toggleKey('googleKeyInput', 'googleEyeIcon')" title="Show/Hide key">
+            <i class="fa-solid fa-eye" id="googleEyeIcon"></i>
+          </button>
+        </div>
+      </div>
+      <div class="form-group form-group-full">
+        <label>Quick Select</label>
+        <select class="form-select" id="googleModelSelect" onchange="selectModel(this.value, 'googleModelInput')">
+          <option value="">-- Choose a Gemini model --</option>
+          <option value="gemini-2.5-flash">Gemini 2.5 Flash (Fastest)</option>
+          <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite (Cheapest)</option>
+          <option value="gemini-2.5-pro">Gemini 2.5 Pro (Smartest)</option>
+          <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+          <option value="__custom__">Custom (type below)</option>
+        </select>
+      </div>
+      <div class="form-group form-group-full">
+        <label>Model ID</label>
+        <input type="text" name="google_model" id="googleModelInput" class="form-control"
+               value="{{ ai_settings.google_model or 'gemini-2.5-flash' }}"
+               placeholder="e.g. gemini-2.5-flash">
+        <small style="color:var(--text-muted);">Model list at <a href="https://ai.google.dev/gemini-api/docs/models" target="_blank">ai.google.dev/gemini-api/docs/models</a></small>
+      </div>
+    </div>
+    <div class="form-actions" style="flex-wrap:wrap;">
+      <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> Save Google Settings</button>
+      <button type="button" class="btn btn-outline-secondary" onclick="testApi('google', this)">
+        <i class="fa-solid fa-plug"></i> Test Connection
+      </button>
+      <label style="display:flex; align-items:center; gap:6px; color:var(--text-muted); font-size:0.85rem; cursor:pointer; margin-left:8px;">
+        <input type="checkbox" id="debug-google" style="accent-color:var(--blue);"> Debug Mode
+      </label>
+      {% if ai_settings.google_api_key %}
+      <span class="badge-status status-green" style="margin-left:8px;"><i class="fa-solid fa-check-circle"></i> API key configured</span>
+      {% else %}
+      <span class="badge-status status-red" style="margin-left:8px;"><i class="fa-solid fa-xmark-circle"></i> No API key set</span>
+      {% endif %}
+      {% if ai_settings.get('ai_provider') == 'google' %}
+      <span class="badge-status status-blue" style="margin-left:8px;"><i class="fa-solid fa-star"></i> Active provider</span>
+      {% endif %}
+    </div>
+  </form>
+  <div id="testResult-google" style="display:none; margin-top:16px; padding:14px; border-radius:8px; font-size:0.9rem;"></div>
+  <div id="debugOutput-google" style="display:none; margin-top:12px;"></div>
+</div>
+
+<div class="panel" style="margin-top:20px;">
+  <h3 class="panel-title"><i class="fa-solid fa-envelope"></i> Email Reminders (SMTP)</h3>
+  <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;">
+    Send document expiry reminders by email. Gmail users: create an
+    <a href="https://myaccount.google.com/apppasswords" target="_blank">App Password</a> and use it as the password.
+  </p>
+  <form method="POST" id="emailSettingsForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="panel" value="email">
+    <div class="form-grid">
+      <div class="form-group">
+        <label>SMTP Server</label>
+        <input type="text" name="smtp_server" class="form-control"
+               value="{{ ai_settings.smtp_server or 'smtp.gmail.com' }}" placeholder="smtp.gmail.com">
+      </div>
+      <div class="form-group">
+        <label>Port</label>
+        <input type="text" name="smtp_port" class="form-control"
+               value="{{ ai_settings.smtp_port or '587' }}" placeholder="587">
+      </div>
+      <div class="form-group">
+        <label>Email / Username</label>
+        <input type="text" name="smtp_user" class="form-control"
+               value="{{ ai_settings.smtp_user or '' }}" placeholder="you@gmail.com">
+      </div>
+      <div class="form-group">
+        <label>Password / App Password</label>
+        <input type="password" name="smtp_password" class="form-control"
+               value="{{ ai_settings.smtp_password or '' }}" placeholder="••••••••">
+      </div>
+      <div class="form-group form-group-full">
+        <label>From Address (optional)</label>
+        <input type="text" name="smtp_from" class="form-control"
+               value="{{ ai_settings.smtp_from or '' }}" placeholder="Defaults to the username above">
+      </div>
+    </div>
+    <div style="display:flex; gap:20px; flex-wrap:wrap; margin:6px 0 16px;">
+      <label style="display:flex; align-items:center; gap:6px; color:var(--text); font-size:0.9rem; cursor:pointer;">
+        <input type="checkbox" name="email_reminders_enabled" style="accent-color:var(--blue);"
+               {{ 'checked' if ai_settings.get('email_reminders_enabled', True) }}>
+        Enable email reminders
+      </label>
+      <label style="display:flex; align-items:center; gap:6px; color:var(--text); font-size:0.9rem; cursor:pointer;">
+        <input type="checkbox" name="auto_reminders_enabled" style="accent-color:var(--blue);"
+               {{ 'checked' if ai_settings.get('auto_reminders_enabled', False) }}>
+        Auto-send daily at {{ config.EMAIL_REMINDER_HOUR }}:00
+      </label>
+    </div>
+    <div style="margin:-8px 0 6px; color:var(--text-muted); font-size:0.85rem;">
+      Send automatically when a document expires in:
+    </div>
+    {% set auto_windows = ai_settings.get('auto_reminder_windows', [7, 3, 0]) %}
+    <div style="display:flex; gap:20px; flex-wrap:wrap; margin:0 0 16px;">
+      <label style="display:flex; align-items:center; gap:6px; color:var(--text); font-size:0.9rem; cursor:pointer;">
+        <input type="checkbox" name="auto_reminder_windows" value="7" style="accent-color:var(--blue);"
+               {{ 'checked' if 7 in auto_windows }}>
+        7 days before
+      </label>
+      <label style="display:flex; align-items:center; gap:6px; color:var(--text); font-size:0.9rem; cursor:pointer;">
+        <input type="checkbox" name="auto_reminder_windows" value="3" style="accent-color:var(--blue);"
+               {{ 'checked' if 3 in auto_windows }}>
+        3 days before
+      </label>
+      <label style="display:flex; align-items:center; gap:6px; color:var(--text); font-size:0.9rem; cursor:pointer;">
+        <input type="checkbox" name="auto_reminder_windows" value="0" style="accent-color:var(--blue);"
+               {{ 'checked' if 0 in auto_windows }}>
+        On expiry day (today)
+      </label>
+    </div>
+    <div class="form-actions" style="flex-wrap:wrap;">
+      <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> Save Email Settings</button>
+      <span style="display:flex; align-items:center; gap:8px; margin-left:8px;">
+        <input type="email" id="testEmailTo" class="form-control" style="width:220px;"
+               placeholder="test@example.com">
+        <button type="button" class="btn btn-outline-secondary" id="testEmailBtn" onclick="testEmail()">
+          <i class="fa-solid fa-paper-plane"></i> Send Test Email
+        </button>
+      </span>
+      {% if ai_settings.smtp_user and ai_settings.smtp_password %}
+      <span class="badge-status status-green" style="margin-left:8px;"><i class="fa-solid fa-check-circle"></i> SMTP configured</span>
+      {% else %}
+      <span class="badge-status status-red" style="margin-left:8px;"><i class="fa-solid fa-xmark-circle"></i> SMTP not configured</span>
+      {% endif %}
+    </div>
+  </form>
+  <div id="testEmailResult" style="display:none; margin-top:16px; padding:14px; border-radius:8px; font-size:0.9rem;"></div>
+</div>
+
+<div class="panel" style="margin-top:20px;">
+  <h3 class="panel-title"><i class="fa-brands fa-google-drive"></i> Google Drive Backup</h3>
+  <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;">
+    Connect your Google account to auto-sync backups to Google Drive. Like WhatsApp backups.
+  </p>
+
+  {% if ai_settings.gdrive_connected %}
+  <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+    <span class="badge-status status-green"><i class="fa-solid fa-check-circle"></i> Connected</span>
+    {% if ai_settings.gdrive_user_email %}
+    <span style="color:var(--text); font-weight:500;">{{ ai_settings.gdrive_user_email }}</span>
+    {% endif %}
+    <form method="POST" action="{{ url_for('backup.gdrive_disconnect') }}" style="display:inline;" onsubmit="return confirm('Disconnect Google Drive?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-outline-danger btn-sm"><i class="fa-solid fa-link-slash"></i> Disconnect</button>
+    </form>
+  </div>
+
+  <div class="form-grid" style="margin-bottom:16px;">
+    <div class="form-group">
+      <label>Last Sync</label>
+      <p style="color:var(--text); margin:0;">{{ ai_settings.gdrive_last_sync or 'Never' }}</p>
+    </div>
+    <div class="form-group">
+      <label>Status</label>
+      <p style="margin:0;">
+        {% if ai_settings.gdrive_last_sync_status == 'success' %}
+        <span class="badge-status status-green"><i class="fa-solid fa-check"></i> Success</span>
+        {% elif ai_settings.gdrive_last_sync_status %}
+        <span class="badge-status status-red"><i class="fa-solid fa-xmark"></i> {{ ai_settings.gdrive_last_sync_status }}</span>
+        {% else %}
+        <span class="badge-status status-gray">No sync yet</span>
+        {% endif %}
+      </p>
+    </div>
+  </div>
+
+  <form method="POST" style="margin-bottom:0;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="panel" value="gdrive">
+    <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+      <label style="display:flex; align-items:center; gap:6px; color:var(--text); font-size:0.9rem; cursor:pointer;">
+        <input type="checkbox" name="gdrive_auto_sync" {% if ai_settings.get('gdrive_auto_sync', True) %}checked{% endif %}
+               style="accent-color:var(--blue);" onchange="this.form.submit();">
+        Auto-sync on every vehicle change
+      </label>
+      <button type="submit" class="btn btn-primary btn-sm"><i class="fa-solid fa-check"></i> Save</button>
+    </div>
+  </form>
+
+  {% else %}
+  <div style="text-align:center; padding:30px 20px; background:var(--charcoal-light); border:1px dashed var(--border); border-radius:10px;">
+    <i class="fa-brands fa-google-drive" style="font-size:2.5rem; color:var(--blue); margin-bottom:12px;"></i>
+    <p style="color:var(--text); margin:0 0 8px; font-weight:500;">Not connected</p>
+    <p style="color:var(--text-muted); font-size:0.85rem; margin:0 0 16px;">Connect your Google account to enable cloud backup sync.</p>
+    <a href="{{ url_for('backup.gdrive_connect') }}" class="btn btn-primary">
+      <i class="fa-solid fa-link"></i> Connect Google Drive
+    </a>
+    <p style="color:var(--text-muted); font-size:0.78rem; margin-top:12px;">
+      Setup: Run <code>python setup_gdrive.py</code> after creating Google Cloud credentials.
+      See <a href="https://github.com/ratneshsahu9098/vcms_aug" target="_blank">README</a> for guide.
+    </p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleKey(inputId, iconId) {
+  const input = document.getElementById(inputId);
+  const icon = document.getElementById(iconId);
+  if (input.type === 'password') {
+    input.type = 'text';
+    icon.classList.replace('fa-eye', 'fa-eye-slash');
+  } else {
+    input.type = 'password';
+    icon.classList.replace('fa-eye-slash', 'fa-eye');
+  }
+}
+
+function selectModel(value, inputId) {
+  const input = document.getElementById(inputId);
+  if (value === '__custom__') {
+    input.value = '';
+    input.focus();
+  } else if (value) {
+    input.value = value;
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const matchSelect = (selectId, inputId) => {
+    const current = document.getElementById(inputId).value;
+    const select = document.getElementById(selectId);
+    if (!current) return;
+    const options = Array.from(select.options);
+    const match = options.find(o => o.value === current && o.value !== '');
+    select.value = match ? current : '__custom__';
+  };
+  matchSelect('modelSelect', 'modelInput');
+  matchSelect('googleModelSelect', 'googleModelInput');
+
+  document.querySelectorAll('input[name="ai_provider"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+      document.querySelectorAll('.provider-option').forEach(opt => {
+        const input = opt.querySelector('input[name="ai_provider"]');
+        opt.classList.toggle('active', !!(input && input.checked));
+      });
+    });
+  });
+});
+
+function testApi(provider, btn) {
+  const debug = document.getElementById('debug-' + provider).checked;
+  const result = document.getElementById('testResult-' + provider);
+  const debugOut = document.getElementById('debugOutput-' + provider);
+
+  const params = new URLSearchParams();
+  params.append('csrf_token', document.querySelector('meta[name="csrf-token"]').content);
+  params.append('ai_provider', provider);
+  if (provider === 'google') {
+    params.append('google_api_key', document.getElementById('googleKeyInput').value);
+    params.append('google_model', document.getElementById('googleModelInput').value);
+  } else {
+    params.append('openrouter_api_key', document.getElementById('apiKeyInput').value);
+    params.append('openrouter_model', document.getElementById('modelInput').value);
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Testing...';
+  result.style.display = 'none';
+  debugOut.style.display = 'none';
+
+  const url = debug ? '{{ url_for("settings.test_api_debug") }}' : '{{ url_for("settings.test_api") }}';
+
+  fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: params.toString()
+  })
+  .then(r => r.json())
+  .then(data => {
+    result.style.display = 'block';
+
+    if (debug && data.debug) {
+      showDebugOutput(data, 'debugOutput-' + provider);
+    }
+
+    if (data.ok) {
+      result.style.background = 'var(--success-bg)';
+      result.style.border = '1px solid var(--success-border)';
+      result.style.color = 'var(--green)';
+      const elapsed = data.elapsed || (data.debug && data.debug.timing && data.debug.timing.total_seconds) || '?';
+      const modelName = (data.debug && data.debug.request && data.debug.request.model) || data.model || '';
+      result.innerHTML = '<i class="fa-solid fa-circle-check"></i> <strong>API is working!</strong> Model: ' +
+        modelName + ' | Response time: ' + elapsed + 's | AI says: "' + data.reply + '"';
+    } else {
+      result.style.background = 'var(--danger-bg)';
+      result.style.border = '1px solid var(--danger-border)';
+      result.style.color = 'var(--red)';
+      let errMsg = data.error || '';
+      if (data.debug && data.debug.response) {
+        errMsg = data.debug.response.error || JSON.stringify(data.debug.response).substring(0, 300);
+      }
+      result.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> <strong>API test failed:</strong> ' + errMsg;
+    }
+  })
+  .catch(err => {
+    result.style.display = 'block';
+    result.style.background = 'var(--danger-bg)';
+    result.style.border = '1px solid var(--danger-border)';
+    result.style.color = 'var(--red)';
+    result.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> <strong>Network error:</strong> ' + err;
+  })
+  .finally(() => {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-plug"></i> Test Connection';
+  });
+}
+
+function testEmail() {
+  const btn = document.getElementById('testEmailBtn');
+  const result = document.getElementById('testEmailResult');
+  const form = document.getElementById('emailSettingsForm');
+  const toEmail = document.getElementById('testEmailTo').value.trim();
+
+  const params = new URLSearchParams(new FormData(form));
+  params.append('test_email_to', toEmail);
+
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Sending...';
+  result.style.display = 'none';
+
+  fetch('{{ url_for("settings.test_email") }}', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: params.toString()
+  })
+  .then(r => r.json())
+  .then(data => {
+    result.style.display = 'block';
+    if (data.ok) {
+      result.style.background = 'var(--success-bg)';
+      result.style.border = '1px solid var(--success-border)';
+      result.style.color = 'var(--green)';
+      result.innerHTML = '<i class="fa-solid fa-circle-check"></i> <strong>Test email sent!</strong> Check the inbox (or spam) of ' + (toEmail || '(address above)') + '.';
+    } else {
+      result.style.background = 'var(--danger-bg)';
+      result.style.border = '1px solid var(--danger-border)';
+      result.style.color = 'var(--red)';
+      result.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> <strong>Failed:</strong> ' + (data.error || 'Unknown error');
+    }
+  })
+  .catch(err => {
+    result.style.display = 'block';
+    result.style.background = 'var(--danger-bg)';
+    result.style.border = '1px solid var(--danger-border)';
+    result.style.color = 'var(--red)';
+    result.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> <strong>Network error:</strong> ' + err;
+  })
+  .finally(() => {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Send Test Email';
+  });
+}
+
+function showDebugOutput(data, elId) {
+  const el = document.getElementById(elId);
+  const d = data.debug;
+
+  let html = '<div class="debug-panel">';
+
+  html += '<div class="debug-section">';
+  html += '<div class="debug-heading"><i class="fa-solid fa-arrow-up"></i> Request</div>';
+  html += '<div class="debug-row"><span class="debug-label">URL:</span> <code>' + d.request.url + '</code></div>';
+  html += '<div class="debug-row"><span class="debug-label">Method:</span> <code>' + d.request.method + '</code></div>';
+  html += '<div class="debug-row"><span class="debug-label">Auth:</span> <code>' + d.request.auth + '</code></div>';
+  html += '<div class="debug-row"><span class="debug-label">Model:</span> <code>' + d.request.model + '</code></div>';
+  html += '<div class="debug-row"><span class="debug-label">Body:</span></div>';
+  html += '<pre class="debug-code">' + escapeHtml(d.request.body) + '</pre>';
+  html += '</div>';
+
+  if (d.response) {
+    html += '<div class="debug-section">';
+    html += '<div class="debug-heading"><i class="fa-solid fa-arrow-down"></i> Response';
+    if (d.timing && d.timing.total_seconds) html += ' <span class="debug-time">(' + d.timing.total_seconds + 's)</span>';
+    html += '</div>';
+    if (d.response.status_code) {
+      const statusColor = d.response.status_code === 200 ? 'var(--green)' : 'var(--red)';
+      html += '<div class="debug-row"><span class="debug-label">Status:</span> <code style="color:' + statusColor + ';">' + d.response.status_code + ' ' + d.response.status_text + '</code></div>';
+    }
+    if (d.response.headers) {
+      html += '<div class="debug-row"><span class="debug-label">Headers:</span></div>';
+      html += '<pre class="debug-code">' + escapeHtml(JSON.stringify(d.response.headers, null, 2)) + '</pre>';
+    }
+    if (d.response.body) {
+      html += '<div class="debug-row"><span class="debug-label">Body:</span></div>';
+      html += '<pre class="debug-code">' + escapeHtml(d.response.body) + '</pre>';
+    }
+    if (d.response.error) {
+      html += '<div class="debug-row" style="color:var(--red);"><span class="debug-label">Error:</span> ' + escapeHtml(d.response.error) + '</div>';
+    }
+    html += '</div>';
+  }
+
+  html += '</div>';
+  el.innerHTML = html;
+  el.style.display = 'block';
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+</script>
+<style>
+  .provider-options { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px; margin-bottom:6px; }
+  .provider-option {
+    display:flex; flex-direction:column; align-items:flex-start; gap:4px;
+    background:var(--charcoal-light); border:2px solid var(--border); border-radius:12px;
+    padding:16px 18px; cursor:pointer; position:relative; transition:border-color .15s, background .15s;
+  }
+  .provider-option:hover { border-color:var(--blue); }
+  .provider-option.active { border-color:var(--blue); background:var(--charcoal); }
+  .provider-option input[type="radio"] { position:absolute; top:14px; right:14px; accent-color:var(--blue); }
+  .provider-option i { font-size:1.4rem; color:var(--blue); margin-bottom:4px; }
+  .provider-option .provider-name { font-weight:700; color:var(--text); font-size:0.98rem; }
+  .provider-option .provider-desc { color:var(--text-muted); font-size:0.8rem; }
+  .badge-status.status-blue { background:rgba(59,130,246,0.15); color:var(--blue); }
+  .debug-panel { background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:16px; }
+  .debug-section { margin-bottom:16px; }
+  .debug-section:last-child { margin-bottom:0; }
+  .debug-heading { font-weight:700; color:var(--text); font-size:0.9rem; margin-bottom:8px; display:flex; align-items:center; gap:8px; }
+  .debug-time { color:var(--text-muted); font-weight:400; font-size:0.82rem; }
+  .debug-row { margin-bottom:6px; font-size:0.85rem; color:var(--text); }
+  .debug-label { color:var(--text-muted); font-weight:600; min-width:80px; display:inline-block; }
+  .debug-code {
+    background:var(--charcoal); border:1px solid var(--border); border-radius:6px;
+    padding:10px 12px; margin:6px 0; font-size:0.8rem; color:var(--text-muted);
+    overflow-x:auto; white-space:pre-wrap; word-break:break-all; max-height:300px; overflow-y:auto;
+  }
+</style>
+{% endblock %}

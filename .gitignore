@@ -1,5 +1,16 @@
 __pycache__/
+*.pyc
 venv/
+.pytest_cache/
+
+# Runtime data (database, settings/API keys, uploads, backups, exports,
+# Google Drive client_secret.json / token.json)
+data/
+
+# Local environment
+.env
+
+# Legacy pre-restructure locations (safe to remove later)
 uploads/
 backups/
 exports/
@@ -7,4 +18,3 @@ settings.json
 client_secret.json
 token.json
 *.db
-*.pyc

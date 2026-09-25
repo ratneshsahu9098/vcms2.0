@@ -1,0 +1,181 @@
+{% extends "layout.html" %}
+{% block title %}Backup{% endblock %}
+{% block page_title %}Backup &amp; Restore{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <h3 class="panel-title"><i class="fa-solid fa-database"></i> Backup &amp; Restore</h3>
+  <p class="text-muted">Create a timestamped archive of the database <b>plus settings</b> — API keys, AI models,
+     SMTP email and reminder config are included in every <code>.zip</code> backup. Legacy <code>.db</code>
+     backups restore the database only.</p>
+
+  <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px;">
+    <form method="POST" style="display:inline;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="create">
+      <button type="submit" class="btn btn-primary"><i class="fa-solid fa-circle-plus"></i> Create Backup Now</button>
+    </form>
+    <form method="POST" enctype="multipart/form-data" style="display:inline;" id="uploadForm">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="upload_restore">
+      <label class="btn btn-outline-secondary" style="cursor:pointer;">
+        <i class="fa-solid fa-file-arrow-up"></i> Upload & Restore
+        <input type="file" name="backup_file" accept=".db,.zip" style="display:none;" onchange="confirmUpload(this)">
+      </label>
+    </form>
+  </div>
+
+  <h4 class="report-group-title">Available Backups</h4>
+  {% if backups %}
+  <div class="table-wrap">
+    <table class="table-main">
+      <thead>
+        <tr>
+          <th>Backup File</th>
+          <th>Created</th>
+          <th>Size</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in backups %}
+        <tr>
+          <td style="font-weight:600; color:var(--text);">{{ b.name }}
+            {% if b.name.endswith('.zip') %}
+            <span class="badge-status status-green" title="Includes database + settings (API keys, models, SMTP)">Full</span>
+            {% else %}
+            <span class="badge-status status-gray" title="Legacy backup: database only">DB only</span>
+            {% endif %}
+          </td>
+          <td>{{ b.created }}</td>
+          <td>{{ b.size }}</td>
+          <td class="actions-cell">
+            <a href="{{ url_for('backup.download_backup', name=b.name) }}" title="Download"><i class="fa-solid fa-download"></i></a>
+            <form method="POST" class="inline-form"
+                  onsubmit="return confirm('Restore {{ b.name }}? Current database and settings will be replaced.');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="action" value="restore">
+              <input type="hidden" name="backup_name" value="{{ b.name }}">
+              <button type="submit" title="Restore"><i class="fa-solid fa-rotate-left"></i></button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty-hint">No backups created yet.</p>
+  {% endif %}
+</div>
+
+<div class="panel" style="margin-top:20px;">
+  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+    <h3 class="panel-title" style="margin:0;"><i class="fa-brands fa-google-drive"></i> Google Drive Sync</h3>
+    {% if gdrive_connected %}
+    <div style="display:flex; gap:8px; align-items:center;">
+      <form method="POST" action="{{ url_for('backup.gdrive_sync') }}" style="display:inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-primary btn-sm" id="syncBtn">
+          <i class="fa-solid fa-cloud-arrow-up"></i> Sync Now
+        </button>
+      </form>
+      <span class="badge-status status-green"><i class="fa-solid fa-check-circle"></i> Connected</span>
+    </div>
+    {% else %}
+    <a href="{{ url_for('settings.settings') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="fa-solid fa-gear"></i> Connect in Settings
+    </a>
+    {% endif %}
+  </div>
+
+  {% if gdrive_connected %}
+  <div style="display:flex; gap:20px; flex-wrap:wrap; margin-bottom:16px; font-size:0.85rem;">
+    <div>
+      <span style="color:var(--text-muted);">Last Sync:</span>
+      <strong style="color:var(--text);">{{ app_settings.gdrive_last_sync or 'Never' }}</strong>
+    </div>
+    <div>
+      <span style="color:var(--text-muted);">Auto-sync:</span>
+      {% if app_settings.get('gdrive_auto_sync', True) %}
+      <span class="badge-status status-green">ON</span>
+      {% else %}
+      <span class="badge-status status-gray">OFF</span>
+      {% endif %}
+    </div>
+    <div>
+      <span style="color:var(--text-muted);">Status:</span>
+      {% if app_settings.gdrive_last_sync_status == 'success' %}
+      <span class="badge-status status-green">OK</span>
+      {% elif app_settings.gdrive_last_sync_status %}
+      <span class="badge-status status-red">Error</span>
+      {% else %}
+      <span class="badge-status status-gray">—</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <h4 class="report-group-title">Google Drive Backups</h4>
+  {% if gdrive_backups %}
+  <div class="table-wrap">
+    <table class="table-main" style="min-width:600px;">
+      <thead>
+        <tr>
+          <th>Backup File</th>
+          <th>Created</th>
+          <th>Size</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in gdrive_backups %}
+        <tr>
+          <td style="font-weight:600; color:var(--text);">{{ b.name }}
+            {% if b.name.endswith('.zip') %}
+            <span class="badge-status status-green" title="Includes database + settings (API keys, models, SMTP)">Full</span>
+            {% else %}
+            <span class="badge-status status-gray" title="Legacy backup: database only">DB only</span>
+            {% endif %}
+          </td>
+          <td>{{ b.created }}</td>
+          <td>{{ b.size }}</td>
+          <td class="actions-cell">
+            <form method="POST" action="{{ url_for('backup.gdrive_restore') }}" class="inline-form"
+                  onsubmit="return confirm('Restore from {{ b.name }}? Current database and settings will be replaced.');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="file_id" value="{{ b.id }}">
+              <button type="submit" title="Restore from Google Drive"><i class="fa-solid fa-rotate-left"></i></button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty-hint">No backups on Google Drive yet. Click "Sync Now" to upload the first backup.</p>
+  {% endif %}
+
+  {% else %}
+  <div style="text-align:center; padding:30px 20px; background:var(--charcoal-light); border:1px dashed var(--border); border-radius:10px;">
+    <i class="fa-brands fa-google-drive" style="font-size:2rem; color:var(--text-muted); margin-bottom:10px;"></i>
+    <p style="color:var(--text-muted); margin:0 0 8px; font-size:0.9rem;">Connect Google Drive for automatic cloud backup.</p>
+    <p style="color:var(--text-muted); margin:0; font-size:0.8rem;">One-time setup: run <code>python setup_gdrive.py</code> after creating Google Cloud credentials.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function confirmUpload(input) {
+  if (input.files.length > 0) {
+    if (confirm('Restore "' + input.files[0].name + '"? Current database and settings will be replaced.')) {
+      document.getElementById('uploadForm').submit();
+    } else {
+      input.value = '';
+    }
+  }
+}
+</script>
+{% endblock %}

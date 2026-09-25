@@ -1,6 +1,6 @@
 # Vehicle Compliance Management System (VCMS)
 
-A Flask-based web application for managing and tracking vehicle compliance documents. Monitor expiry dates for PUC, Fitness, Permit, Tax, and Insurance certificates with automated status tracking, reminders, and reporting.
+A Flask-based web application for managing and tracking vehicle compliance documents. Monitor expiry dates for PUC, Fitness, Permit, Tax, and Insurance certificates with automated status tracking, reminders, email reports, and AI-assisted document scanning.
 
 ---
 
@@ -12,6 +12,7 @@ A Flask-based web application for managing and tracking vehicle compliance docum
 - [Setup & Installation](#setup--installation)
 - [Configuration](#configuration)
 - [Usage](#usage)
+- [Tests](#tests)
 - [API Reference](#api-reference)
 - [Production Notes](#production-notes)
 
@@ -51,6 +52,21 @@ Overall vehicle status is derived from the worst-case document status.
 - **Filter by status**: expired, valid, today, 7 days, 15 days, 30 days
 - **Filter by type**: vehicle type, owner, district
 
+### Email Reminders & Logs
+- Per-vehicle expiry reminder emails with a full document status table
+- Bulk reminders (all / selected / filtered vehicles), grouped by owner email
+- Multi-recipient owner emails (`a@x.com, b@x.com`)
+- Detailed vehicle report emails with attachments-free HTML tables
+- Test email from Settings
+- Every send is logged on `/reminders` (kind: `reminder` / `details` / `test`), with filters and status badges
+- Optional daily auto-reminder job (APScheduler)
+
+### AI Features
+- **Document scanner** (`/ai/parse-document`): upload RC / tax receipt / permit / insurance image or PDF → OCR + AI extraction of vehicle, tax (`tax_from`, `tax_expiry`, `tax_mode`, `tax_amount`) and permit fields (`permit_from`, `permit_expiry`, `permit_auth_no`, `permit_address`); raw OCR text shown, field-comparison table against an existing vehicle (auto-fill empty fields, accept changed ones), recent scans list with view/edit, then save or update the vehicle
+- **AI chat assistant** (`/ai/chat`) with saved sessions
+- **AI insights** (`/ai/insights`): fleet summary and risk analysis
+- Providers: OpenRouter or Google Gemini (configured in Settings or env)
+
 ### Import / Export
 - **Import formats**: Excel (`.xlsx`, `.xls`), CSV (`.csv`), JSON (`.json`)
 - **Column mapping**: Automatically maps common header names to internal fields
@@ -75,10 +91,10 @@ Overall vehicle status is derived from the worst-case document status.
 - Includes vehicle details, document statuses, and a report ID
 - Downloadable as PNG images
 
-### Backup & Restore
-- One-click timestamped SQLite database backups
-- Restore from any previous backup
-- Download backup files
+### Backup & Google Drive
+- One-click timestamped backups (database + settings/API keys)
+- Restore from any previous backup, download backup files
+- Optional Google Drive upload, list and restore with auto-sync on data changes
 
 ### UI/UX
 - Dark mode interface (charcoal/dark-gray palette)
@@ -93,12 +109,14 @@ Overall vehicle status is derived from the worst-case document status.
 
 | Component | Technology |
 |-----------|------------|
-| Backend | Flask 3.0.3 |
+| Backend | Flask 3.0.3 (application factory + blueprints) |
 | Database | SQLite via Flask-SQLAlchemy 3.1.1 |
 | Frontend | Bootstrap 5.3.3, Font Awesome 6.5.1 |
 | Data Processing | pandas 2.2.2, openpyxl 3.1.5 |
 | QR Generation | qrcode 7.4.2, Pillow 10.4.0 |
-| Auth | Werkzeug 3.0.3 (password hashing) |
+| Scheduling | APScheduler / Flask-APScheduler |
+| AI | OpenRouter or Google Gemini (REST via `requests`) |
+| Auth | Session-based single user (Werkzeug) |
 
 ---
 
@@ -106,49 +124,80 @@ Overall vehicle status is derived from the worst-case document status.
 
 ```
 vcms/
-├── app.py              # Flask app factory, routes, and auth logic
-├── models.py           # SQLAlchemy models (Vehicle, TaxDetail)
-├── config.py           # Configuration class
-├── utils.py            # Helpers: date parsing, import/export, backups, QR
-├── seed_data.py        # Sample data loader for demo/testing
-├── requirements.txt    # Python dependencies
-├── vehicles.db         # SQLite database (auto-created)
-├── templates/          # Jinja2 HTML templates
-│   ├── layout.html         # Base layout with sidebar navigation
-│   ├── login.html          # Login page
-│   ├── dashboard.html      # Main dashboard
-│   ├── vehicle_list.html   # Vehicle list with search/filter
-│   ├── add_vehicle.html    # Add vehicle form
-│   ├── edit_vehicle.html   # Edit vehicle form
-│   ├── view_vehicle.html   # Vehicle detail view
-│   ├── print_vehicle.html  # Single vehicle print view
-│   ├── print_vehicles.html # Batch print view
-│   ├── import_excel.html   # Import page
-│   ├── export_excel.html   # Export configuration page
-│   ├── reports.html        # Reports page
-│   ├── backup.html         # Backup management
-│   ├── settings.html       # Settings page
-│   ├── vehicle_tax.html    # Tax details list
-│   └── tax_form.html       # Tax add/edit form
-├── static/
-│   ├── css/style.css   # Custom dark theme styles
-│   └── js/script.js    # Sidebar toggle and flash auto-dismiss
-├── uploads/            # User file uploads
-├── exports/            # Generated export files
-└── backups/            # Database backup files
+├── run.py                 # Entry point: python run.py
+├── requirements.txt       # Runtime dependencies
+├── requirements-dev.txt   # pytest, pyflakes
+├── .env.example           # Documented environment variables (copy to .env)
+├── app/                   # Application package
+│   ├── __init__.py        # create_app() factory: config, db, migrations,
+│   │                      #   scheduler, blueprints, request hooks
+│   ├── config.py          # Config class (paths derive from project root)
+│   ├── extensions.py      # db = SQLAlchemy()
+│   ├── middleware.py      # login_required decorator
+│   ├── migrations.py      # run_migrations(), resequence_sr_nos()
+│   ├── scheduler.py       # Daily auto email reminder job
+│   ├── hooks.py           # Auto Google Drive sync after data-changing POSTs
+│   ├── constants.py       # Shared constants (EXPORT_COLUMNS)
+│   ├── models/            # SQLAlchemy models
+│   │   ├── vehicle.py         # Vehicle
+│   │   ├── tax.py             # TaxDetail
+│   │   ├── reminder_log.py    # ReminderLog (email send log)
+│   │   ├── document_scan.py   # DocumentScan (AI scans)
+│   │   └── chat.py            # ChatSession / ChatMessage
+│   ├── routes/            # One blueprint module per feature area
+│   │   ├── auth.py            # /login, /logout
+│   │   ├── dashboard.py       # /, /reports
+│   │   ├── vehicles.py        # vehicle CRUD, print, QR, WhatsApp
+│   │   ├── email.py           # email reminders & bulk details
+│   │   ├── reminders.py       # /reminders email log
+│   │   ├── data.py            # /import, /export
+│   │   ├── backup.py          # /backup, Google Drive sync
+│   │   ├── settings.py        # /settings, test API/email
+│   │   ├── tax.py             # tax history & payments
+│   │   ├── api.py             # /api/* JSON endpoints
+│   │   └── ai.py              # AI chat, document parser, insights
+│   ├── services/          # Business logic (no Flask routes)
+│   │   ├── email_service.py   # SMTP, reminder/detail emails, logging
+│   │   ├── ai_service.py      # OpenRouter/Gemini chat + document parsing
+│   │   ├── google_drive.py    # OAuth, upload/restore/list
+│   │   ├── vehicle_service.py # Form validation, record mapping
+│   │   └── document_service.py# Scan persistence helpers
+│   ├── utils/             # Cross-cutting helpers
+│   │   ├── dates.py           # Date parsing/status helpers
+│   │   ├── files.py           # Upload allow-list, import normalization
+│   │   ├── backups.py         # create/list/restore backups
+│   │   ├── whatsapp.py        # WhatsApp message builders
+│   │   ├── qr.py              # QR payload builder
+│   │   └── settings.py        # load/save data/settings.json
+│   ├── templates/         # Jinja2 templates (moved with the package)
+│   └── static/            # CSS / JS
+├── scripts/
+│   ├── seed_data.py       # python scripts/seed_data.py
+│   └── setup_gdrive.py    # Google Drive OAuth setup helper
+├── tests/                 # pytest suite (isolated temp database)
+├── docs/
+│   └── architecture.md    # Architecture notes
+└── data/                  # Runtime data (gitignored)
+    ├── vehicles.db            # SQLite database
+    ├── settings.json          # UI-set settings incl. API/SMTP keys
+    ├── uploads/ exports/ backups/
+    ├── client_secret.json     # Google OAuth (optional)
+    └── token.json             # Google OAuth token (optional)
 ```
+
+URLs are unchanged from earlier versions; internal endpoint names are now
+blueprint-prefixed (e.g. `vehicles.view_vehicle` instead of `view_vehicle`).
 
 ---
 
 ## Setup & Installation
 
 ### Prerequisites
-- Python 3.9+
+- Python 3.9+ (3.10+ recommended)
 
 ### Install
 
 ```bash
-cd vcms_aug-main
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
@@ -157,41 +206,53 @@ pip install -r requirements.txt
 ### Run
 
 ```bash
-python app.py
+python run.py
 ```
 
-Visit **http://localhost:5000**. The database (`vehicles.db`) is created automatically on first run.
+Visit **http://localhost:5000**. `data/` and the database are created
+automatically on first run.
 
 ### Load Sample Data (Optional)
 
 ```bash
-python seed_data.py
+python scripts/seed_data.py
 ```
 
 This inserts 5 demo vehicles with varied expiry statuses for testing.
+
+### Google Drive (Optional)
+
+```bash
+# 1. Create OAuth client in Google Cloud Console (Desktop app),
+#    enable the Google Drive API, download and rename to client_secret.json
+# 2. Place it in data/
+python scripts/setup_gdrive.py
+```
 
 ---
 
 ## Configuration
 
-Environment variables override defaults in `config.py`:
+Environment variables override defaults in `app/config.py`. Copy
+`.env.example` to `.env` (loaded automatically) or export them in your shell:
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `VCMS_SECRET_KEY` | Flask session secret key | `dev-secret-key-change-in-production` |
-| `VCMS_DATABASE_URI` | SQLAlchemy database URI | `sqlite:///vehicles.db` |
+| `VCMS_DATABASE_URI` | SQLAlchemy database URI | `sqlite:///data/vehicles.db` |
 | `VCMS_LOGIN_REQUIRED` | Require login for all pages | `true` |
 | `VCMS_ADMIN_USER` | Admin login username | `admin` |
 | `VCMS_ADMIN_PASSWORD` | Admin login password | `admin123` |
+| `VCMS_CSRF_ENABLED` | Session-token CSRF checks on POST forms | `true` |
+| `VCMS_AI_PROVIDER` | `openrouter` or `gemini` (Settings overrides) | `openrouter` |
+| `VCMS_OPENROUTER_KEY` | OpenRouter API key | – |
+| `VCMS_GOOGLE_KEY` | Google Gemini API key | – |
+| `VCMS_SMTP_SERVER` / `PORT` / `USER` / `PASSWORD` / `FROM` | SMTP fallback config (Settings overrides) | – |
+| `VCMS_EMAIL_REMINDER_HOUR` | Hour (0-23) for the daily auto reminder | `9` |
+| `VCMS_GDRIVE_ENABLED` | Master switch for Google Drive sync | `false` |
 
-Example (Linux/macOS):
-
-```bash
-export VCMS_SECRET_KEY="your-strong-secret-key"
-export VCMS_ADMIN_USER="admin"
-export VCMS_ADMIN_PASSWORD="strong-password-here"
-export VCMS_LOGIN_REQUIRED="true"
-```
+Secrets (API keys, SMTP password) can also be set from the **Settings** page;
+they are stored in `data/settings.json` (git-ignored).
 
 ---
 
@@ -202,11 +263,15 @@ export VCMS_LOGIN_REQUIRED="true"
 | Dashboard | `/` | Overview of all vehicle compliance stats |
 | Vehicle List | `/vehicles` | Search, filter, and manage all vehicles |
 | Add Vehicle | `/vehicles/add` | Add a new vehicle record |
+| Email Logs | `/reminders` | All sent emails with kind/status filters |
 | Import | `/import` | Bulk import from Excel/CSV/JSON |
 | Export | `/export` | Configure and download vehicle data |
 | Reports | `/reports` | Generate compliance reports |
 | Backup | `/backup` | Create, restore, or download backups |
-| Settings | `/settings` | View current configuration |
+| Settings | `/settings` | API keys, SMTP, auto-reminder toggles |
+| AI Chat | `/ai/chat` | Fleet compliance assistant |
+| AI Scanner | `/ai/parse-document` | Extract vehicle data from document photos |
+| AI Insights | `/ai/insights` | Fleet risk analysis |
 | Vehicle Tax | `/vehicles/<id>/tax` | View tax payment history |
 
 ### Default Login
@@ -214,7 +279,26 @@ export VCMS_LOGIN_REQUIRED="true"
 - **Username**: `admin`
 - **Password**: `admin123`
 
-Change these via environment variables or directly in `config.py`.
+Change these via `VCMS_ADMIN_USER` / `VCMS_ADMIN_PASSWORD` before exposing the app.
+
+---
+
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+The suite runs against a throwaway temp database (your `data/vehicles.db` is
+never touched), covers page rendering (catches broken endpoint names), vehicle
+CRUD/validation, email logging, and AI tax/permit extraction.
+
+Lint:
+
+```bash
+pyflakes app run.py tests scripts
+```
 
 ---
 
@@ -223,6 +307,7 @@ Change these via environment variables or directly in `config.py`.
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/vehicle/<id>` | GET | Returns vehicle data as JSON |
+| `/api/check-duplicate?field=<col>&value=<v>` | GET | Duplicate check as JSON |
 
 ---
 
@@ -231,7 +316,7 @@ Change these via environment variables or directly in `config.py`.
 This application uses simple session-based single-user authentication. For production or multi-user deployments, consider:
 
 - **Flask-Login** with hashed passwords stored in the database
-- **Flask-WTF** for CSRF protection on all forms
+- **Session-token CSRF protection** is built in on all POST forms (disable with `VCMS_CSRF_ENABLED=false`); switch to Flask-WTF if you add more complex form handling
 - **PostgreSQL** or **MySQL** instead of SQLite for concurrent access
 - **Gunicorn** or **uWSGI** as a production WSGI server
 - **Nginx** as a reverse proxy with HTTPS
