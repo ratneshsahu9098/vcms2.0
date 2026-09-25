@@ -51,6 +51,7 @@ Overall vehicle status is derived from the worst-case document status.
 - **Search**: Partial match across vehicle number, chassis number, engine number, owner name, mobile number, and policy number
 - **Filter by status**: expired, valid, today, 7 days, 15 days, 30 days
 - **Filter by type**: vehicle type, owner, district
+- **Mobile/Email substring filters**: `?mobile=` and `?email=` for exact substring matching
 
 ### Email Reminders & Logs
 - Per-vehicle expiry reminder emails with a full document status table
@@ -63,8 +64,8 @@ Overall vehicle status is derived from the worst-case document status.
 
 ### AI Features
 - **Document scanner** (`/ai/parse-document`): upload RC / tax receipt / permit / insurance image or PDF → OCR + AI extraction of vehicle, tax (`tax_from`, `tax_expiry`, `tax_mode`, `tax_amount`) and permit fields (`permit_from`, `permit_expiry`, `permit_auth_no`, `permit_address`); raw OCR text shown, field-comparison table against an existing vehicle (auto-fill empty fields, accept changed ones), recent scans list with view/edit, then save or update the vehicle
-- **AI chat assistant** (`/ai/chat`) with saved sessions
-- **AI insights** (`/ai/insights`): fleet summary and risk analysis
+- **AI chat assistant** (`/ai/chat`) with saved sessions and suggestion chips
+- **AI insights** (`/ai/insights`): fleet summary and risk analysis with Indian datetime format (`DD-MM-YYYY HH:MM AM/PM IST`)
 - Providers: OpenRouter or Google Gemini (configured in Settings or env)
 
 ### Import / Export
@@ -244,12 +245,14 @@ Environment variables override defaults in `app/config.py`. Copy
 | `VCMS_ADMIN_USER` | Admin login username | `admin` |
 | `VCMS_ADMIN_PASSWORD` | Admin login password | `admin123` |
 | `VCMS_CSRF_ENABLED` | Session-token CSRF checks on POST forms | `true` |
+| `VCMS_CSRF_EXEMPT_ENDPOINTS` | Comma-separated endpoint names exempt from CSRF | – |
 | `VCMS_AI_PROVIDER` | `openrouter` or `gemini` (Settings overrides) | `openrouter` |
 | `VCMS_OPENROUTER_KEY` | OpenRouter API key | – |
 | `VCMS_GOOGLE_KEY` | Google Gemini API key | – |
 | `VCMS_SMTP_SERVER` / `PORT` / `USER` / `PASSWORD` / `FROM` | SMTP fallback config (Settings overrides) | – |
 | `VCMS_EMAIL_REMINDER_HOUR` | Hour (0-23) for the daily auto reminder | `9` |
 | `VCMS_GDRIVE_ENABLED` | Master switch for Google Drive sync | `false` |
+| `TESSERACT_CMD` | Path to tesseract executable for OCR (auto-detected if unset) | OS-specific default |
 
 Secrets (API keys, SMTP password) can also be set from the **Settings** page;
 they are stored in `data/settings.json` (git-ignored).
@@ -316,9 +319,19 @@ pyflakes app run.py tests scripts
 This application uses simple session-based single-user authentication. For production or multi-user deployments, consider:
 
 - **Flask-Login** with hashed passwords stored in the database
-- **Session-token CSRF protection** is built in on all POST forms (disable with `VCMS_CSRF_ENABLED=false`); switch to Flask-WTF if you add more complex form handling
+- **Session-token CSRF protection** is built in on all POST forms (disable with `VCMS_CSRF_ENABLED=false`); exempt specific endpoints via `VCMS_CSRF_EXEMPT_ENDPOINTS` or `@csrf.exempt` decorator; switch to Flask-WTF if you add more complex form handling
 - **PostgreSQL** or **MySQL** instead of SQLite for concurrent access
 - **Gunicorn** or **uWSGI** as a production WSGI server
 - **Nginx** as a reverse proxy with HTTPS
 - Move `SECRET_KEY` and credentials to a `.env` file or secrets manager
-- Add rate limiting and input sanitization for public-facing deployments
+- **Rate limiting** is implemented on `/api/check-duplicate` (30 req/min/IP); extend to other public endpoints as needed
+- **Safe SQLite backups** use SQLite's native backup API to avoid corruption when restoring live databases
+
+### Recent Reliability & Security Improvements
+- Import wizard now captures `permit_auth_no` and `permit_address` fields
+- AI document parser validates JSON responses with schema fallbacks
+- GDrive auto-sync uses idempotent queue with sync IDs (no duplicate uploads)
+- Email logging sanitizes recipient addresses from logs
+- OCR supports `TESSERACT_CMD` env var for cross-platform compatibility
+- Duplicate detection in import validates both vehicle_number AND chassis_number
+- Edit form now validates date formats and shows field-specific errors
