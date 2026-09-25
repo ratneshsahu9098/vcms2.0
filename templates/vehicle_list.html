@@ -60,15 +60,19 @@
   <button type="button" id="btnEmailSelected" class="btn btn-outline-info" disabled>
     <i class="fa-solid fa-envelope"></i> Email Selected (<span id="selectedEmailCount">0</span>)
   </button>
-  <form method="POST" action="{{ url_for('email_bulk_reminders') }}" class="inline-form" style="display:inline;">
+  <form method="POST" action="{{ url_for('email_bulk_reminders') }}" class="inline-form" style="display:inline;"
+        onsubmit="return confirm('Send expiry reminder emails to all owners with expiring documents?');">
     <button type="submit" class="btn btn-outline-info"><i class="fa-solid fa-envelope"></i> Email All Expiring</button>
   </form>
-  <form method="POST" action="{{ url_for('email_all_vehicle_details') }}" id="sendAllForm" style="display:inline;">
-    <input type="hidden" name="vehicle_ids" id="sendAllIds">
-    <input type="hidden" name="email_to" value="">
-    <button type="button" id="btnShowSendAll" class="btn btn-outline-success" onclick="if(confirm('Send all vehicle details to each owner\'s email?')) this.closest('form').submit();">
-      <i class="fa-solid fa-paper-plane"></i> Send All Details
-    </button>
+  <form method="POST" action="{{ url_for('email_all_vehicle_details') }}" class="inline-form" style="display:inline;"
+        onsubmit="return confirm('Send full details of ALL vehicles to their owners? One email per owner.');">
+    <input type="hidden" name="scope" value="all">
+    <button type="submit" class="btn btn-outline-info"><i class="fa-solid fa-envelope-open-text"></i> Send All Vehicle Details</button>
+  </form>
+  <form method="POST" action="{{ url_for('email_all_vehicle_details') }}" class="inline-form" style="display:inline;"
+        onsubmit="return confirm('Send details of EXPIRING vehicles only (expired or due within 30 days) to their owners?');">
+    <input type="hidden" name="scope" value="expiring">
+    <button type="submit" class="btn btn-outline-info"><i class="fa-solid fa-calendar-check"></i> Send Only Expiring</button>
   </form>
   <form id="emailSelectedForm" method="POST" action="{{ url_for('email_selected_vehicles') }}" class="inline-form" style="display:none;">
     <input type="hidden" name="vehicle_ids" id="emailSelectedIds">
@@ -151,11 +155,12 @@
         <a href="{{ url_for('edit_vehicle', vehicle_id=v.id) }}" title="Edit"><i class="fa-solid fa-pen"></i></a>
         <a href="{{ url_for('whatsapp_expired', vehicle_id=v.id) }}" target="_blank" title="Send Expired Documents Reminder via WhatsApp"><i class="fa-brands fa-whatsapp" style="color:#25d366;"></i></a>
         <a href="{{ url_for('whatsapp_reminder', vehicle_id=v.id, document_label='all') }}" target="_blank" title="Send All Details via WhatsApp"><i class="fa-brands fa-whatsapp"></i></a>
-        {% if v.owner_email %}
         <form method="POST" action="{{ url_for('email_reminder', vehicle_id=v.id) }}" class="inline-form" style="display:inline;">
-          <button type="submit" title="Send Email Reminder"><i class="fa-solid fa-envelope" style="color:#3b82f6;"></i></button>
+          <button type="submit" title="{% if v.owner_email %}Send expiry reminder email to {{ v.owner_email }}{% else %}No email address set — edit vehicle to add one{% endif %}"><i class="fa-solid fa-envelope" style="color:{{ '#3b82f6' if v.owner_email else 'var(--text-muted)' }};"></i></button>
         </form>
-        {% endif %}
+        <form method="POST" action="{{ url_for('email_all_details', vehicle_id=v.id) }}" class="inline-form" style="display:inline;">
+          <button type="submit" title="{% if v.owner_email %}Send all details email to {{ v.owner_email }}{% else %}No email address set — edit vehicle to add one{% endif %}"><i class="fa-solid fa-envelope-open-text" style="color:{{ '#60a5fa' if v.owner_email else 'var(--text-muted)' }};"></i></button>
+        </form>
         <a href="tel:{{ v.mobile_number }}" title="Call"><i class="fa-solid fa-phone"></i></a>
         <form method="POST" action="{{ url_for('delete_vehicle', vehicle_id=v.id) }}"
               onsubmit="return confirm('Delete vehicle {{ v.vehicle_number }}? This cannot be undone.');" class="inline-form">

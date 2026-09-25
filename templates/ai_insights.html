@@ -3,13 +3,13 @@
 {% block page_title %}AI Fleet Insights{% endblock %}
 
 {% block content %}
-{% if not ai_enabled %}
+{% if not ollama_running %}
 <div class="panel" style="text-align:center; padding:60px 20px;">
   <i class="fa-solid fa-brain" style="font-size:3rem; color:var(--text-muted); margin-bottom:16px;"></i>
   <h3 style="color:var(--text);">API Key Not Configured</h3>
-  <p style="color:var(--text-muted); margin:10px 0 20px;">Set your OpenRouter or Google Gemini API key to generate AI insights.</p>
-  <code style="background:var(--bg); padding:8px 16px; border-radius:8px; color:var(--green);">set VCMS_AI_PROVIDER=gemini</code>
-  <p style="color:var(--text-muted); margin-top:12px; font-size:0.85rem;">Get a free Gemini key at <a href="https://aistudio.google.com/app/apikey" target="_blank">aistudio.google.com/apikey</a> or an OpenRouter key at <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a></p>
+  <p style="color:var(--text-muted); margin:10px 0 20px;">Set your AI API key (OpenRouter or Google Gemini) in Settings to generate AI insights.</p>
+  <a href="{{ url_for('settings') }}" class="btn btn-primary"><i class="fa-solid fa-gear"></i> Open Settings</a>
+  <p style="color:var(--text-muted); margin-top:12px; font-size:0.85rem;">Free keys: <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a> &middot; <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a></p>
 </div>
 
 {% elif not insights %}

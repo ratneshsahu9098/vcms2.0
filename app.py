@@ -11,19 +11,23 @@ from flask import (
     Flask, render_template, request, redirect, url_for, flash,
     session, send_file, jsonify, abort
 )
-from flask_apscheduler import APScheduler
 from werkzeug.security import generate_password_hash, check_password_hash
 import pandas as pd
 
 from config import Config
-from models import db, Vehicle, TaxDetail, ChatSession, ChatMessage, ReminderLog, ScanHistory
+from models import db, Vehicle, TaxDetail, ChatSession, ChatMessage, ReminderLog, DocumentScan
 from utils import (
     parse_date, allowed_file, normalize_import_dataframe,
-    create_backup, list_backups, whatsapp_message, whatsapp_expired_reminder, generate_vehicle_qr
+    create_backup, restore_backup, list_backups, whatsapp_message, whatsapp_expired_reminder, generate_vehicle_qr
 )
 import ai_service
-import google_drive
 import email_service
+import google_drive
+
+try:
+    from flask_apscheduler import APScheduler
+except ImportError:
+    APScheduler = None
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +35,6 @@ logger = logging.getLogger(__name__)
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
-    app.config["SCHEDULER_API_ENABLED"] = True
 
     db.init_app(app)
 
@@ -40,26 +43,111 @@ def create_app():
 
     with app.app_context():
         db.create_all()
-        _migrate_db_columns()
+        run_migrations()
         resequence_sr_nos()
+        start_scheduler(app)
+
+    register_routes(app)
+    return app
+
+
+def run_migrations():
+    """Lightweight SQLite migrations for columns added after first release."""
+    try:
+        inspector = db.inspect(db.engine)
+        table_names = inspector.get_table_names()
+        if "vehicles" not in table_names:
+            return
+        migrations = [
+            ("vehicles", "owner_email", "VARCHAR(255)"),
+            ("vehicles", "permit_from", "DATE"),
+            ("vehicles", "permit_auth_no", "VARCHAR(50)"),
+            ("vehicles", "permit_address", "VARCHAR(255)"),
+            ("reminder_logs", "kind", "VARCHAR(20)"),
+        ]
+        with db.engine.begin() as conn:
+            for table, column, col_type in migrations:
+                existing_cols = [c["name"] for c in inspector.get_columns(table)]
+                if column not in existing_cols:
+                    try:
+                        conn.execute(db.text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
+                        logger.info(f"Migration: added {table}.{column}")
+                    except Exception as e:
+                        logger.warning(f"Migration skipped {table}.{column}: {e}")
+
+        # reminder_logs: backfill kind for old rows and make vehicle_id nullable
+        # (manual detail emails / tests are not tied to a single vehicle).
+        try:
+            if "reminder_logs" in table_names:
+                cols = {c["name"]: c for c in db.inspect(db.engine).get_columns("reminder_logs")}
+                if "kind" in cols:
+                    with db.engine.begin() as conn:
+                        conn.execute(db.text("UPDATE reminder_logs SET kind = 'reminder' WHERE kind IS NULL"))
+                    logger.info("Migration: reminder_logs.kind backfilled")
+                vc = cols.get("vehicle_id")
+                if vc is not None and not vc.get("nullable", True):
+                    with db.engine.begin() as conn:
+                        conn.execute(db.text("ALTER TABLE reminder_logs RENAME TO reminder_logs_old"))
+                        conn.execute(db.text(
+                            "CREATE TABLE reminder_logs ("
+                            "id INTEGER NOT NULL PRIMARY KEY, "
+                            "vehicle_id INTEGER, "
+                            "document_type VARCHAR(30) NOT NULL, "
+                            "recipient_email VARCHAR(120) NOT NULL, "
+                            "status VARCHAR(20), "
+                            "error_message TEXT, "
+                            "sent_at DATETIME, "
+                            "kind VARCHAR(20), "
+                            "FOREIGN KEY(vehicle_id) REFERENCES vehicles (id))"
+                        ))
+                        conn.execute(db.text(
+                            "INSERT INTO reminder_logs (id, vehicle_id, document_type, recipient_email,"
+                            " status, error_message, sent_at, kind)"
+                            " SELECT id, vehicle_id, document_type, recipient_email,"
+                            " status, error_message, sent_at, kind FROM reminder_logs_old"
+                        ))
+                        conn.execute(db.text("DROP TABLE reminder_logs_old"))
+                    logger.info("Migration: reminder_logs.vehicle_id is now nullable")
+        except Exception as e:
+            logger.warning(f"Migration skipped reminder_logs rebuild: {e}")
+    except Exception as e:
+        logger.warning(f"Migration check failed: {e}")
+
+
+def start_scheduler(app):
+    """Daily auto email reminders via APScheduler (optional dependency)."""
+    if APScheduler is None:
+        logger.info("Flask-APScheduler not installed; daily auto-reminders disabled.")
+        return
+    if app.config.get("TESTING"):
+        return
+    if app.debug and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
+        return  # avoid double-start under the Werkzeug reloader parent process
+
+    app.config.setdefault("SCHEDULER_API_ENABLED", False)
 
     scheduler = APScheduler()
     scheduler.init_app(app)
 
-    @scheduler.task("cron", id="daily_email_reminders", hour=app.config.get("EMAIL_REMINDER_HOUR", 9), minute=0)
+    @scheduler.task("cron", id="daily_email_reminders",
+                    hour=app.config.get("EMAIL_REMINDER_HOUR", 9), minute=0)
     def daily_email_reminders():
         with app.app_context():
             from utils import load_settings
             settings = load_settings()
             if not settings.get("auto_reminders_enabled", False):
                 return
-            result = email_service.auto_reminder_job()
-            logger.info(f"Auto-reminder job: {result}")
+            try:
+                result = email_service.auto_reminder_job()
+                logger.info(f"Auto-reminder job: {result}")
+            except Exception:
+                logger.exception("Auto-reminder job failed")
 
-    scheduler.start()
-
-    register_routes(app)
-    return app
+    try:
+        scheduler.start()
+        logger.info(f"Scheduler started: daily email reminders at {app.config.get('EMAIL_REMINDER_HOUR', 9)}:00")
+    except Exception:
+        logger.exception("Scheduler failed to start")
 
 
 # ---------------------------------------------------------------------------
@@ -75,42 +163,50 @@ def login_required(view):
     return wrapped
 
 
-def _migrate_db_columns():
-    """Add columns that may be missing from existing SQLite tables."""
-    inspector = db.inspect(db.engine)
-    migrations = [
-        ("vehicles", "owner_email", "VARCHAR(120)"),
-        ("vehicles", "national_permit_number", "VARCHAR(50)"),
-        ("vehicles", "address", "TEXT"),
-        ("scan_history", "tax_from", "DATE"),
-        ("scan_history", "tax_expiry", "DATE"),
-        ("scan_history", "tax_mode", "VARCHAR(30)"),
-    ]
-    with db.engine.begin() as conn:
-        for table, column, col_type in migrations:
-            existing_cols = [c["name"] for c in inspector.get_columns(table)]
-            if column not in existing_cols:
-                try:
-                    conn.execute(db.text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
-                    logger.info(f"Migration: added {table}.{column}")
-                except Exception as e:
-                    logger.warning(f"Migration skipped {table}.{column}: {e}")
-
-        table_names = inspector.get_table_names()
-        if "reminder_logs" not in table_names:
-            db.create_all()
-            logger.info("Migration: created reminder_logs table")
-
-
 def resequence_sr_nos():
     vehicles = Vehicle.query.order_by(Vehicle.vehicle_number).all()
-    changed = False
     for i, v in enumerate(vehicles, 1):
-        expected = f"SN{i:03d}"
-        if v.sr_no != expected:
-            v.sr_no = expected
-            changed = True
-    if changed:
+        v.sr_no = f"SN{i:03d}"
+    db.session.commit()
+
+
+def find_existing_vehicle(parsed_data):
+    vnum = str(parsed_data.get("vehicle_number") or "").strip().upper()
+    chassis = str(parsed_data.get("chassis_number") or "").strip().upper()
+    if not vnum and not chassis:
+        return None
+    return Vehicle.query.filter(
+        db.or_(Vehicle.vehicle_number == vnum, Vehicle.chassis_number == chassis)
+    ).first()
+
+
+def recent_document_scans(limit=5):
+    return DocumentScan.query.order_by(
+        DocumentScan.scanned_at.desc(), DocumentScan.id.desc()
+    ).limit(limit).all()
+
+
+def save_document_scan(file_name, parsed_data, ocr_text, existing_vehicle=None):
+    scan = DocumentScan(
+        file_name=file_name,
+        document_type=str(parsed_data.get("document_type") or ""),
+        parsed_data=json.dumps(parsed_data, default=str),
+        ocr_text=ocr_text,
+        vehicle_id=existing_vehicle.id if existing_vehicle else None,
+    )
+    db.session.add(scan)
+    db.session.commit()
+    prune_document_scans()
+    return scan
+
+
+def prune_document_scans(keep=20):
+    stale = DocumentScan.query.order_by(
+        DocumentScan.scanned_at.desc(), DocumentScan.id.desc()
+    ).offset(keep).all()
+    for s in stale:
+        db.session.delete(s)
+    if stale:
         db.session.commit()
 
 
@@ -119,14 +215,17 @@ EXPORT_COLUMNS = [
     ("chassis_number", "Chassis Number"),
     ("engine_number", "Engine Number"),
     ("owner_name", "Owner Name"),
-    ("owner_email", "Owner Email"),
     ("mobile_number", "Mobile Number"),
+    ("owner_email", "Owner Email"),
     ("vehicle_type", "Vehicle Type"),
     ("district", "District"),
     ("registration_date", "Registration Date"),
     ("puc_expiry", "PUC Expiry"),
     ("fitness_expiry", "Fitness Expiry"),
     ("permit_expiry", "Permit Expiry"),
+    ("permit_from", "Permit From"),
+    ("permit_auth_no", "Permit Auth No."),
+    ("permit_address", "Address"),
     ("tax_expiry", "Tax Expiry"),
     ("tax_from", "Tax From"),
     ("tax_mode", "Tax Mode"),
@@ -156,17 +255,11 @@ def register_routes(app):
         if request.method == "POST":
             username = request.form.get("username", "")
             password = request.form.get("password", "")
-            remember = request.form.get("remember_me") == "on"
             if username == Config.ADMIN_USERNAME and password == Config.ADMIN_PASSWORD:
                 session["logged_in"] = True
                 session["username"] = username
-                if remember:
-                    session.permanent = True
-                    app.permanent_session_lifetime = timedelta(days=30)
                 flash("Welcome back!", "success")
-                next_url = request.args.get("next", "")
-                if not next_url or not next_url.startswith("/") or next_url.startswith("//"):
-                    next_url = url_for("dashboard")
+                next_url = request.args.get("next") or url_for("dashboard")
                 return redirect(next_url)
             flash("Invalid username or password.", "error")
         return render_template("login.html")
@@ -214,6 +307,7 @@ def register_routes(app):
             for label, info in statuses.items():
                 if info["expiry"] == today:
                     expiring_today += 1
+                    break
 
         recent_added = Vehicle.query.order_by(Vehicle.created_at.desc()).limit(5).all()
         recent_updated = Vehicle.query.order_by(Vehicle.updated_at.desc()).limit(5).all()
@@ -233,7 +327,7 @@ def register_routes(app):
 
     # ---- Vehicle list / search / filter ------------------------------------
 
-    @app.route("/vehicles")
+    @app.route("/vehicles", strict_slashes=False)
     @login_required
     def vehicle_list():
         query = Vehicle.query
@@ -340,22 +434,23 @@ def register_routes(app):
                 chassis_number=request.form["chassis_number"].strip().upper(),
                 engine_number=request.form.get("engine_number", "").strip().upper(),
                 owner_name=request.form["owner_name"].strip(),
-                address=request.form.get("address", "").strip(),
-                owner_email=request.form.get("owner_email", "").strip(),
                 mobile_number=request.form["mobile_number"].strip(),
+                owner_email=email_service.normalize_emails(request.form.get("owner_email", "")),
                 vehicle_type=request.form.get("vehicle_type", "").strip(),
                 district=request.form.get("district", "").strip(),
                 registration_date=parse_date(request.form.get("registration_date")),
                 puc_expiry=parse_date(request.form.get("puc_expiry")),
                 fitness_expiry=parse_date(request.form.get("fitness_expiry")),
                 permit_expiry=parse_date(request.form.get("permit_expiry")),
+                permit_from=parse_date(request.form.get("permit_from")),
+                permit_auth_no=request.form.get("permit_auth_no", "").strip(),
+                permit_address=request.form.get("permit_address", "").strip(),
                 tax_from=parse_date(request.form.get("tax_from")),
                 tax_expiry=parse_date(request.form.get("tax_expiry")),
                 tax_mode=request.form.get("tax_mode", "").strip(),
                 tax_amount=float(request.form.get("tax_amount", 0) or 0),
                 insurance_expiry=parse_date(request.form.get("insurance_expiry")),
                 national_permit_expiry=parse_date(request.form.get("national_permit_expiry")),
-                national_permit_number=request.form.get("national_permit_number", "").strip().upper(),
                 state_permit_expiry=parse_date(request.form.get("state_permit_expiry")),
                 pollution_certificate_number=request.form.get("pollution_certificate_number", "").strip(),
                 insurance_company=request.form.get("insurance_company", "").strip(),
@@ -363,14 +458,9 @@ def register_routes(app):
                 remarks=request.form.get("remarks", "").strip(),
             )
             db.session.add(vehicle)
-            try:
-                db.session.commit()
-                flash(f"Vehicle {vehicle.vehicle_number} added successfully.", "success")
-                return redirect(url_for("vehicle_list"))
-            except Exception as e:
-                db.session.rollback()
-                flash(f"Error adding vehicle: {str(e)}", "error")
-                return redirect(url_for("add_vehicle"))
+            db.session.commit()
+            flash(f"Vehicle {vehicle.vehicle_number} added successfully.", "success")
+            return redirect(url_for("vehicle_list"))
 
         districts = [r[0] for r in db.session.query(Vehicle.district).distinct() if r[0]]
         return render_template("add_vehicle.html", form={}, districts=districts)
@@ -394,22 +484,23 @@ def register_routes(app):
             vehicle.chassis_number = request.form["chassis_number"].strip().upper()
             vehicle.engine_number = request.form.get("engine_number", "").strip().upper()
             vehicle.owner_name = request.form["owner_name"].strip()
-            vehicle.address = request.form.get("address", "").strip()
-            vehicle.owner_email = request.form.get("owner_email", "").strip()
             vehicle.mobile_number = request.form["mobile_number"].strip()
+            vehicle.owner_email = email_service.normalize_emails(request.form.get("owner_email", ""))
             vehicle.vehicle_type = request.form.get("vehicle_type", "").strip()
             vehicle.district = request.form.get("district", "").strip()
             vehicle.registration_date = parse_date(request.form.get("registration_date"))
             vehicle.puc_expiry = parse_date(request.form.get("puc_expiry"))
             vehicle.fitness_expiry = parse_date(request.form.get("fitness_expiry"))
             vehicle.permit_expiry = parse_date(request.form.get("permit_expiry"))
+            vehicle.permit_from = parse_date(request.form.get("permit_from"))
+            vehicle.permit_auth_no = request.form.get("permit_auth_no", "").strip()
+            vehicle.permit_address = request.form.get("permit_address", "").strip()
             vehicle.tax_from = parse_date(request.form.get("tax_from"))
             vehicle.tax_expiry = parse_date(request.form.get("tax_expiry"))
             vehicle.tax_mode = request.form.get("tax_mode", "").strip()
             vehicle.tax_amount = float(request.form.get("tax_amount", 0) or 0)
             vehicle.insurance_expiry = parse_date(request.form.get("insurance_expiry"))
             vehicle.national_permit_expiry = parse_date(request.form.get("national_permit_expiry"))
-            vehicle.national_permit_number = request.form.get("national_permit_number", "").strip().upper()
             vehicle.state_permit_expiry = parse_date(request.form.get("state_permit_expiry"))
             vehicle.pollution_certificate_number = request.form.get("pollution_certificate_number", "").strip()
             vehicle.insurance_company = request.form.get("insurance_company", "").strip()
@@ -417,14 +508,9 @@ def register_routes(app):
             vehicle.remarks = request.form.get("remarks", "").strip()
             vehicle.updated_at = datetime.utcnow()
 
-            try:
-                db.session.commit()
-                flash(f"Vehicle {vehicle.vehicle_number} updated successfully.", "success")
-                return redirect(url_for("vehicle_list"))
-            except Exception as e:
-                db.session.rollback()
-                flash(f"Error updating vehicle: {str(e)}", "error")
-                return redirect(url_for("edit_vehicle", vehicle_id=vehicle_id))
+            db.session.commit()
+            flash(f"Vehicle {vehicle.vehicle_number} updated successfully.", "success")
+            return redirect(url_for("vehicle_list"))
 
         districts = [r[0] for r in db.session.query(Vehicle.district).distinct() if r[0]]
         return render_template("edit_vehicle.html", vehicle=vehicle, form=vehicle.to_dict(), districts=districts)
@@ -447,14 +533,10 @@ def register_routes(app):
     def delete_vehicle(vehicle_id):
         vehicle = Vehicle.query.get_or_404(vehicle_id)
         number = vehicle.vehicle_number
-        try:
-            db.session.delete(vehicle)
-            db.session.commit()
-            resequence_sr_nos()
-            flash(f"Vehicle {number} deleted.", "success")
-        except Exception as e:
-            db.session.rollback()
-            flash(f"Error deleting vehicle: {str(e)}", "error")
+        db.session.delete(vehicle)
+        db.session.commit()
+        resequence_sr_nos()
+        flash(f"Vehicle {number} deleted.", "success")
         return redirect(url_for("vehicle_list"))
 
     @app.route("/vehicles/<int:vehicle_id>")
@@ -462,8 +544,7 @@ def register_routes(app):
     def view_vehicle(vehicle_id):
         vehicle = Vehicle.query.get_or_404(vehicle_id)
         filtered_ids = session.get('filtered_vehicle_ids', [])
-        filtered_set = set(filtered_ids) if filtered_ids else set()
-        if filtered_set and vehicle_id in filtered_set:
+        if filtered_ids and vehicle_id in filtered_ids:
             idx = filtered_ids.index(vehicle_id)
             prev_id = filtered_ids[idx - 1] if idx > 0 else None
             next_id = filtered_ids[idx + 1] if idx < len(filtered_ids) - 1 else None
@@ -600,7 +681,7 @@ def register_routes(app):
         wa_link = f"https://wa.me/{vehicle.mobile_number}?text={urllib.parse.quote(message)}"
         return redirect(wa_link)
 
-    # ---- Email Reminders ----------------------------------------------------
+    # ---- Email reminders (SMTP) ----------------------------------------------
 
     @app.route("/vehicles/<int:vehicle_id>/email-reminder", methods=["POST"])
     @login_required
@@ -613,16 +694,38 @@ def register_routes(app):
         elif result.get("sent"):
             flash(f"Email reminder sent to {vehicle.owner_email} for: {', '.join(result['sent'])}", "success")
         else:
-            flash("No documents expiring within 30 days. Nothing to send.", "info")
-        return redirect(url_for("view_vehicle", vehicle_id=vehicle.id))
+            flash("No documents expiring within 30 days (or already reminded today). Nothing to send.", "info")
+        return redirect(request.referrer or url_for("view_vehicle", vehicle_id=vehicle.id))
+
+    @app.route("/vehicles/<int:vehicle_id>/email-all-details", methods=["POST"])
+    @login_required
+    def email_all_details(vehicle_id):
+        """Email the full vehicle details report — counterpart of the WhatsApp 'all details' link."""
+        vehicle = Vehicle.query.get_or_404(vehicle_id)
+        if not email_service.parse_emails(vehicle.owner_email):
+            flash(f"No email address set for {vehicle.vehicle_number}. Edit the vehicle to add one.", "error")
+            return redirect(request.referrer or url_for("vehicle_list"))
+        if not email_service.is_configured():
+            flash("SMTP is not configured. Set email settings in Settings.", "error")
+            return redirect(request.referrer or url_for("vehicle_list"))
+        result = email_service.send_all_vehicle_details(vehicle.owner_email, [vehicle.id])
+        if result.get("ok"):
+            flash(f"All details for {vehicle.vehicle_number} emailed to {vehicle.owner_email}.", "success")
+        else:
+            flash(f"Failed to send email: {result.get('error', 'Unknown error')}", "error")
+        return redirect(request.referrer or url_for("vehicle_list"))
 
     @app.route("/vehicles/email-bulk", methods=["POST"])
     @login_required
     def email_bulk_reminders():
+        if not email_service.is_configured():
+            flash("SMTP is not configured. Set email settings in Settings.", "error")
+            return redirect(url_for("vehicle_list"))
         force = request.form.get("force") == "1"
         result = email_service.send_bulk_reminders(force=force)
         flash(
-            f"Consolidated reminders: {result['emails_sent']} email(s) sent to {result['total_vehicles']} vehicle(s), {result['failed']} failed.",
+            f"Consolidated reminders: {result['emails_sent']} email(s) sent to {result['total_vehicles']} vehicle(s), "
+            f"{result['failed']} failed.",
             "success" if result["emails_sent"] else "error",
         )
         return redirect(url_for("vehicle_list"))
@@ -638,20 +741,49 @@ def register_routes(app):
         if not id_list:
             flash("No valid vehicle IDs.", "error")
             return redirect(url_for("vehicle_list"))
+        if not email_service.is_configured():
+            flash("SMTP is not configured. Set email settings in Settings.", "error")
+            return redirect(url_for("vehicle_list"))
         vehicles = Vehicle.query.filter(Vehicle.id.in_(id_list)).all()
         result = email_service.send_consolidated_reminders(vehicles, force=True)
         flash(
-            f"Consolidated reminders: {result['emails_sent']} email(s) sent to {result['total_vehicles']} vehicle(s), {result['failed']} failed.",
+            f"Consolidated reminders: {result['emails_sent']} email(s) sent to {result['total_vehicles']} vehicle(s), "
+            f"{result['failed']} failed.",
             "success" if result["emails_sent"] else "error",
         )
         return redirect(url_for("vehicle_list"))
 
-    @app.route("/vehicles/email-all-details", methods=["POST"])
+    @app.route("/vehicles/email-vehicle-details", methods=["POST"])
     @login_required
     def email_all_vehicle_details():
+        """Email full vehicle details to each owner — all vehicles, or only expiring ones."""
+        scope = request.form.get("scope", "all")
+
+        if not email_service.is_configured():
+            flash("SMTP is not configured. Set email settings in Settings.", "error")
+            return redirect(url_for("vehicle_list"))
+
         vehicle_ids_raw = request.form.get("vehicle_ids", "").strip()
-        vehicle_ids = [int(x) for x in vehicle_ids_raw.split(",") if x.strip().isdigit()] if vehicle_ids_raw else None
-        vehicles = Vehicle.query.filter(Vehicle.id.in_(vehicle_ids)).all() if vehicle_ids else Vehicle.query.all()
+        if vehicle_ids_raw:
+            id_list = [int(x) for x in vehicle_ids_raw.split(",") if x.strip().isdigit()]
+            vehicles = Vehicle.query.filter(Vehicle.id.in_(id_list)).all() if id_list else Vehicle.query.all()
+        else:
+            vehicles = Vehicle.query.all()
+
+        if scope == "expiring":
+            today = date.today()
+            vehicles = [
+                v for v in vehicles
+                if any(info["expiry"] and (info["expiry"] - today).days <= 30
+                       for info in v.document_statuses().values())
+            ]
+            if not vehicles:
+                flash("No expiring vehicles found (expired or due within 30 days).", "info")
+                return redirect(url_for("vehicle_list"))
+
+        if not vehicles:
+            flash("No vehicles found.", "error")
+            return redirect(url_for("vehicle_list"))
 
         by_owner = {}
         for v in vehicles:
@@ -659,19 +791,24 @@ def register_routes(app):
                 continue
             by_owner.setdefault(v.owner_email, []).append(v.id)
 
+        if not by_owner:
+            flash("No vehicles have an owner email set — nothing to send.", "error")
+            return redirect(url_for("vehicle_list"))
+
         sent = 0
         failed = 0
-        skipped = len(vehicles) - sum(len(ids) for ids in by_owner.values())
-        for email, v_ids in by_owner.items():
-            result = email_service.send_all_vehicle_details(email, v_ids)
+        for email_addr, v_ids in by_owner.items():
+            result = email_service.send_all_vehicle_details(email_addr, v_ids)
             if result.get("ok"):
                 sent += 1
             else:
                 failed += 1
+        skipped = len(vehicles) - sum(len(x) for x in by_owner.values())
+        scope_label = "Expiring vehicle details" if scope == "expiring" else "Vehicle details"
         if sent:
-            flash(f"Vehicle details sent: {sent} email(s) delivered, {failed} failed, {skipped} skipped (no email).", "success")
+            flash(f"{scope_label} sent: {sent} email(s) delivered, {failed} failed, {skipped} skipped (no email).", "success")
         else:
-            flash(f"No emails sent. {skipped} vehicles have no owner email set.", "error")
+            flash(f"No emails sent ({failed} failed). Check SMTP settings.", "error")
         return redirect(url_for("vehicle_list"))
 
     @app.route("/reminders")
@@ -679,10 +816,13 @@ def register_routes(app):
     def reminder_logs():
         page = request.args.get("page", 1, type=int)
         status_filter = request.args.get("status", "").strip()
+        kind_filter = request.args.get("kind", "").strip()
         per_page = 50
         query = ReminderLog.query.order_by(ReminderLog.sent_at.desc())
         if status_filter in ("sent", "failed"):
             query = query.filter_by(status=status_filter)
+        if kind_filter in ("reminder", "details", "test"):
+            query = query.filter_by(kind=kind_filter)
         logs = query.paginate(page=page, per_page=per_page, error_out=False)
         return render_template("reminders.html", logs=logs)
 
@@ -750,9 +890,8 @@ def register_routes(app):
                         chassis_number=chassis,
                         engine_number=str(record.get("engine_number", "")).strip().upper(),
                         owner_name=str(record.get("owner_name", "")).strip(),
-                        address=str(record.get("address", "")).strip(),
-                        owner_email=str(record.get("owner_email", "")).strip(),
                         mobile_number=str(record.get("mobile_number", "")).strip(),
+                        owner_email=email_service.normalize_emails(str(record.get("owner_email", "") or "")),
                         vehicle_type=str(record.get("vehicle_type", "")).strip(),
                         district=str(record.get("district", "")).strip(),
                         registration_date=parse_date(record.get("registration_date")),
@@ -765,7 +904,6 @@ def register_routes(app):
                         tax_amount=float(record.get("tax_amount", 0) or 0),
                         insurance_expiry=parse_date(record.get("insurance_expiry")),
                         national_permit_expiry=parse_date(record.get("national_permit_expiry")),
-                        national_permit_number=str(record.get("national_permit_number", "")).strip().upper(),
                         state_permit_expiry=parse_date(record.get("state_permit_expiry")),
                         pollution_certificate_number=str(record.get("pollution_certificate_number", "")).strip(),
                         insurance_company=str(record.get("insurance_company", "")).strip(),
@@ -806,8 +944,8 @@ def register_routes(app):
                         chassis_number=chassis,
                         engine_number=str(row.get("engine_number", "")).strip().upper(),
                         owner_name=str(row.get("owner_name", "")).strip(),
-                        address=str(row.get("address", "")).strip(),
                         mobile_number=str(row.get("mobile_number", "")).strip(),
+                        owner_email=email_service.normalize_emails(str(row.get("owner_email", "") or "")),
                         vehicle_type=str(row.get("vehicle_type", "")).strip(),
                         district=str(row.get("district", "")).strip(),
                         registration_date=parse_date(row.get("registration_date")),
@@ -820,7 +958,6 @@ def register_routes(app):
                         tax_amount=float(row.get("tax_amount", 0) or 0),
                         insurance_expiry=parse_date(row.get("insurance_expiry")),
                         national_permit_expiry=parse_date(row.get("national_permit_expiry")),
-                        national_permit_number=str(row.get("national_permit_number", "")).strip().upper(),
                         state_permit_expiry=parse_date(row.get("state_permit_expiry")),
                         pollution_certificate_number=str(row.get("pollution_certificate_number", "")).strip(),
                         insurance_company=str(row.get("insurance_company", "")).strip(),
@@ -1001,40 +1138,44 @@ def register_routes(app):
         if request.method == "POST":
             action = request.form.get("action")
             if action == "create":
-                name, _ = create_backup(db_path, app.config["BACKUP_FOLDER"], subfolder="local")
-                flash(f"Backup created: {name}", "success")
+                name, _ = create_backup(db_path, app.config["BACKUP_FOLDER"])
+                flash(f"Backup created: {name} (database + settings, API keys and models)", "success")
             elif action == "restore":
-                rel_path = request.form.get("backup_path")
-                if rel_path:
-                    backup_dir = os.path.realpath(app.config["BACKUP_FOLDER"])
-                    backup_path = os.path.realpath(os.path.join(backup_dir, rel_path))
-                    if not backup_path.startswith(backup_dir + os.sep):
-                        flash("Invalid backup path.", "error")
-                    elif os.path.exists(backup_path):
-                        db.session.remove()
-                        shutil.copy2(backup_path, db_path)
-                        flash(f"Database restored from {os.path.basename(rel_path)}.", "success")
+                backup_name = request.form.get("backup_name")
+                backup_path = os.path.join(app.config["BACKUP_FOLDER"], backup_name)
+                if os.path.exists(backup_path):
+                    db.session.remove()
+                    db.engine.dispose()
+                    result = restore_backup(backup_path, db_path)
+                    if result["ok"]:
+                        flash(f"{result['message']} ({backup_name})", "success")
                     else:
-                        flash("Backup file not found.", "error")
+                        flash(result["message"], "error")
+                else:
+                    flash("Backup file not found.", "error")
             elif action == "upload_restore":
                 file = request.files.get("backup_file")
                 if file and file.filename:
                     filename = file.filename.strip()
-                    if not filename.endswith(".db"):
-                        flash("Only .db files are allowed.", "error")
+                    if not filename.endswith(".db") and not filename.endswith(".zip"):
+                        flash("Only .db or .zip backup files are allowed.", "error")
                     else:
                         upload_path = os.path.join(app.config["BACKUP_FOLDER"], f"upload_{filename}")
                         file.save(upload_path)
                         db.session.remove()
-                        shutil.copy2(upload_path, db_path)
+                        db.engine.dispose()
+                        result = restore_backup(upload_path, db_path)
                         os.remove(upload_path)
-                        flash(f"Database restored from uploaded file: {filename}", "success")
+                        if result["ok"]:
+                            flash(f"{result['message']} (uploaded: {filename})", "success")
+                        else:
+                            flash(result["message"], "error")
                 else:
                     flash("No file selected.", "error")
             return redirect(url_for("backup"))
 
         from utils import load_settings
-        backups = list_backups(app.config["BACKUP_FOLDER"], subfolder="local")
+        backups = list_backups(app.config["BACKUP_FOLDER"])
         gdrive_backups = google_drive.list_backups()
         gdrive_connected = google_drive.is_connected()
         app_settings = load_settings()
@@ -1042,30 +1183,25 @@ def register_routes(app):
                                gdrive_backups=gdrive_backups, gdrive_connected=gdrive_connected,
                                app_settings=app_settings)
 
-    @app.route("/backup/download/<path:rel_path>")
+    @app.route("/backup/download/<name>")
     @login_required
-    def download_backup(rel_path):
-        backup_dir = os.path.realpath(app.config["BACKUP_FOLDER"])
-        path = os.path.realpath(os.path.join(backup_dir, rel_path))
-        if not path.startswith(backup_dir + os.sep) and path != backup_dir:
-            abort(403)
+    def download_backup(name):
+        path = os.path.join(app.config["BACKUP_FOLDER"], name)
         if not os.path.exists(path):
             abort(404)
-        return send_file(path, as_attachment=True, download_name=os.path.basename(path))
+        return send_file(path, as_attachment=True, download_name=name)
 
     # ---- Google Drive Sync ------------------------------------------------
-
-    GDRIVE_REDIRECT_URI = os.environ.get("VCMS_GDRIVE_REDIRECT_URI", "http://localhost:5000/settings/google/callback")
 
     @app.route("/settings/google/connect")
     @login_required
     def gdrive_connect():
-        flow, error = google_drive.start_oauth_flow(GDRIVE_REDIRECT_URI)
+        flow, error = google_drive.start_oauth_flow()
         if error:
             flash(error, "error")
             return redirect(url_for("settings"))
-        auth_url, _ = flow.authorization_url(prompt="consent")
-        session["gdrive_code_verifier"] = flow.code_verifier
+        redirect_uri = url_for("gdrive_callback", _external=True)
+        auth_url, _ = flow.authorization_url(prompt="consent", redirect_uri=redirect_uri)
         return redirect(auth_url)
 
     @app.route("/settings/google/callback")
@@ -1075,8 +1211,8 @@ def register_routes(app):
         if not code:
             flash("Google Drive authorization failed.", "error")
             return redirect(url_for("settings"))
-        code_verifier = session.pop("gdrive_code_verifier", None)
-        result = google_drive.save_token_from_code(code, GDRIVE_REDIRECT_URI, code_verifier=code_verifier)
+        redirect_uri = url_for("gdrive_callback", _external=True)
+        result = google_drive.save_token_from_code(code, redirect_uri)
         if result.get("ok"):
             email = google_drive.get_user_email()
             settings = load_settings()
@@ -1105,7 +1241,7 @@ def register_routes(app):
     def gdrive_sync():
         from utils import load_settings, save_settings
         db_path = app.config["SQLALCHEMY_DATABASE_URI"].replace("sqlite:///", "")
-        name, backup_path = create_backup(db_path, app.config["BACKUP_FOLDER"], subfolder="gdrive")
+        name, backup_path = create_backup(db_path, app.config["BACKUP_FOLDER"])
         result = google_drive.upload_backup(backup_path)
         settings = load_settings()
         if result.get("ok"):
@@ -1133,15 +1269,19 @@ def register_routes(app):
             flash("No backup selected.", "error")
             return redirect(url_for("backup"))
         db_path = app.config["SQLALCHEMY_DATABASE_URI"].replace("sqlite:///", "")
-        temp_path = os.path.join(app.config["BACKUP_FOLDER"], "gdrive_restore_temp.db")
-        result = google_drive.download_backup(file_id, temp_path)
-        if result.get("ok"):
+        temp_path = os.path.join(app.config["BACKUP_FOLDER"], "gdrive_restore_temp.bak")
+        dl = google_drive.download_backup(file_id, temp_path)
+        if dl.get("ok"):
             db.session.remove()
-            shutil.copy2(temp_path, db_path)
+            db.engine.dispose()
+            result = restore_backup(temp_path, db_path)
             os.remove(temp_path)
-            flash("Database restored from Google Drive backup.", "success")
+            if result["ok"]:
+                flash(f"{result['message']} (Google Drive)", "success")
+            else:
+                flash(result["message"], "error")
         else:
-            flash(f"Restore failed: {result.get('error', 'Unknown')}", "error")
+            flash(f"Restore failed: {dl.get('error', 'Unknown')}", "error")
         return redirect(url_for("backup"))
 
     @app.route("/backup/sync-status")
@@ -1159,7 +1299,7 @@ def register_routes(app):
         })
 
     def sync_to_gdrive():
-        from utils import load_settings, save_settings
+        from utils import load_settings
         settings = load_settings()
         if not settings.get("gdrive_auto_sync", True):
             return
@@ -1167,7 +1307,7 @@ def register_routes(app):
             return
         try:
             db_path = app.config["SQLALCHEMY_DATABASE_URI"].replace("sqlite:///", "")
-            name, backup_path = create_backup(db_path, app.config["BACKUP_FOLDER"], subfolder="gdrive")
+            name, backup_path = create_backup(db_path, app.config["BACKUP_FOLDER"])
             result = google_drive.upload_backup(backup_path)
             settings = load_settings()
             if result.get("ok"):
@@ -1184,7 +1324,7 @@ def register_routes(app):
         if request.method == "POST" and response.status_code < 400:
             gdrive_endpoints = (
                 "add_vehicle", "edit_vehicle", "delete_vehicle", "delete_all_vehicles",
-                "import_excel", "gdrive_restore",
+                "import_data", "restore",
             )
             if request.endpoint in gdrive_endpoints:
                 import threading
@@ -1199,24 +1339,41 @@ def register_routes(app):
         if request.method == "POST":
             from utils import load_settings, save_settings
             current = load_settings()
-            if "ai_provider" in request.form:
-                provider = request.form.get("ai_provider", "").strip()
-                if provider in ("openrouter", "gemini"):
-                    current["ai_provider"] = provider
-            if "openrouter_api_key" in request.form:
+            panel = request.form.get("panel", "")
+
+            if panel == "provider":
+                provider = request.form.get("ai_provider", "openrouter").strip()
+                current["ai_provider"] = provider if provider in ("openrouter", "google") else "openrouter"
+            elif panel == "openrouter":
                 current["openrouter_api_key"] = request.form.get("openrouter_api_key", "").strip()
-                current["openrouter_model"] = request.form.get("openrouter_model", "").strip()
-            if "gemini_api_key" in request.form:
-                current["gemini_api_key"] = request.form.get("gemini_api_key", "").strip()
-                current["gemini_model"] = request.form.get("gemini_model", "").strip()
-            current["gdrive_auto_sync"] = request.form.get("gdrive_auto_sync") == "on"
-            if "smtp_server" in request.form:
-                current["smtp_server"] = request.form.get("smtp_server", "smtp.gmail.com").strip()
-                current["smtp_port"] = request.form.get("smtp_port", "587").strip()
-                current["smtp_user"] = request.form.get("smtp_user", "").strip()
-                current["smtp_password"] = request.form.get("smtp_password", "").strip()
-                current["smtp_from"] = request.form.get("smtp_from", "").strip()
-                current["email_reminders_enabled"] = request.form.get("email_reminders_enabled") == "on"
+                model = request.form.get("openrouter_model", "").strip()
+                if model:
+                    current["openrouter_model"] = model
+            elif panel == "google":
+                current["google_api_key"] = request.form.get("google_api_key", "").strip()
+                google_model = request.form.get("google_model", "").strip()
+                if google_model:
+                    current["google_model"] = google_model
+            elif panel == "gdrive":
+                current["gdrive_auto_sync"] = request.form.get("gdrive_auto_sync") == "on"
+            elif panel == "email":
+                _save_email_form_settings()
+                flash("Email settings saved.", "success")
+                return redirect(url_for("settings"))
+            else:
+                provider = request.form.get("ai_provider", "openrouter").strip()
+                current["ai_provider"] = provider if provider in ("openrouter", "google") else "openrouter"
+                current["openrouter_api_key"] = request.form.get("openrouter_api_key", "").strip()
+                current["google_api_key"] = request.form.get("google_api_key", "").strip()
+                or_model = request.form.get("openrouter_model", "").strip()
+                if or_model:
+                    current["openrouter_model"] = or_model
+                g_model = request.form.get("google_model", "").strip()
+                if g_model:
+                    current["google_model"] = g_model
+                if "gdrive_auto_sync" in request.form:
+                    current["gdrive_auto_sync"] = request.form.get("gdrive_auto_sync") == "on"
+
             save_settings(current)
             flash("Settings saved successfully.", "success")
             return redirect(url_for("settings"))
@@ -1226,82 +1383,74 @@ def register_routes(app):
         ai_settings["gdrive_connected"] = google_drive.is_connected()
         return render_template("settings.html", ai_settings=ai_settings)
 
+    def _save_ai_form_settings(apply_provider=False):
+        """Persist AI fields posted from the test forms (only fields present)."""
+        from utils import load_settings, save_settings
+        current = load_settings()
+        if apply_provider:
+            provider = request.form.get("ai_provider")
+            if provider in ("openrouter", "google"):
+                current["ai_provider"] = provider
+        api_key = request.form.get("openrouter_api_key")
+        if api_key is not None:
+            current["openrouter_api_key"] = api_key.strip()
+        model = request.form.get("openrouter_model")
+        if model:
+            current["openrouter_model"] = model.strip()
+        google_key = request.form.get("google_api_key")
+        if google_key is not None:
+            current["google_api_key"] = google_key.strip()
+        google_model = request.form.get("google_model")
+        if google_model:
+            current["google_model"] = google_model.strip()
+        save_settings(current)
+        return current
+
     @app.route("/settings/test-api", methods=["POST"])
     @login_required
     def test_api():
-        from utils import load_settings, save_settings
-        api_key = request.form.get("openrouter_api_key", "").strip()
-        model = request.form.get("openrouter_model", "").strip()
-        gemini_key = request.form.get("gemini_api_key", "").strip()
-        gemini_model = request.form.get("gemini_model", "").strip()
-        provider = request.form.get("ai_provider", "").strip()
-        current = load_settings()
-        if provider in ("openrouter", "gemini"):
-            current["ai_provider"] = provider
-        if "openrouter_api_key" in request.form:
-            current["openrouter_api_key"] = api_key
-        if model:
-            current["openrouter_model"] = model
-        if "gemini_api_key" in request.form:
-            current["gemini_api_key"] = gemini_key
-        if gemini_model:
-            current["gemini_model"] = gemini_model
-        save_settings(current)
-        result = ai_service.test_api_connection()
+        _save_ai_form_settings()
+        provider = request.form.get("ai_provider") or None
+        result = ai_service.test_api_connection(provider)
         return jsonify(result)
 
     @app.route("/settings/test-api-debug", methods=["POST"])
     @login_required
     def test_api_debug():
-        from utils import load_settings, save_settings
-        api_key = request.form.get("openrouter_api_key", "").strip()
-        model = request.form.get("openrouter_model", "").strip()
-        gemini_key = request.form.get("gemini_api_key", "").strip()
-        gemini_model = request.form.get("gemini_model", "").strip()
-        provider = request.form.get("ai_provider", "").strip()
-        current = load_settings()
-        if provider in ("openrouter", "gemini"):
-            current["ai_provider"] = provider
-        if "openrouter_api_key" in request.form:
-            current["openrouter_api_key"] = api_key
-        if model:
-            current["openrouter_model"] = model
-        if "gemini_api_key" in request.form:
-            current["gemini_api_key"] = gemini_key
-        if gemini_model:
-            current["gemini_model"] = gemini_model
-        save_settings(current)
-        result = ai_service.test_api_connection_debug()
+        _save_ai_form_settings()
+        provider = request.form.get("ai_provider") or None
+        result = ai_service.test_api_connection_debug(provider)
         return jsonify(result)
+
+    def _save_email_form_settings():
+        """Persist SMTP email settings posted from the settings/test forms."""
+        from utils import load_settings, save_settings
+        current = load_settings()
+        if "smtp_server" in request.form:
+            current["smtp_server"] = request.form.get("smtp_server", "smtp.gmail.com").strip() or "smtp.gmail.com"
+            current["smtp_port"] = request.form.get("smtp_port", "587").strip() or "587"
+            current["smtp_user"] = request.form.get("smtp_user", "").strip()
+            current["smtp_password"] = request.form.get("smtp_password", "").strip()
+            current["smtp_from"] = request.form.get("smtp_from", "").strip() or current["smtp_user"]
+            current["email_reminders_enabled"] = request.form.get("email_reminders_enabled") == "on"
+            current["auto_reminders_enabled"] = request.form.get("auto_reminders_enabled") == "on"
+            try:
+                windows = sorted({int(w) for w in request.form.getlist("auto_reminder_windows")})
+            except (TypeError, ValueError):
+                windows = [7, 3, 0]
+            current["auto_reminder_windows"] = windows
+        save_settings(current)
+        return current
 
     @app.route("/settings/test-email", methods=["POST"])
     @login_required
     def test_email():
+        _save_email_form_settings()
         to_email = request.form.get("test_email_to", "").strip()
         if not to_email:
             return jsonify({"ok": False, "error": "No email address provided"})
         result = email_service.send_test_email(to_email)
         return jsonify(result)
-
-    @app.route("/settings/save-email", methods=["POST"])
-    @login_required
-    def save_email_settings():
-        from utils import load_settings, save_settings
-        current = load_settings()
-        current["smtp_server"] = request.form.get("smtp_server", "smtp.gmail.com").strip()
-        current["smtp_port"] = request.form.get("smtp_port", "587").strip()
-        current["smtp_user"] = request.form.get("smtp_user", "").strip()
-        current["smtp_password"] = request.form.get("smtp_password", "").strip()
-        current["smtp_from"] = request.form.get("smtp_from", "").strip() or request.form.get("smtp_user", "").strip()
-        if "mailgun_api_key" in request.form:
-            current["mailgun_api_key"] = request.form.get("mailgun_api_key", "").strip()
-            current["mailgun_domain"] = request.form.get("mailgun_domain", "").strip()
-            current["mailgun_from"] = request.form.get("mailgun_from", "").strip()
-        current["email_reminders_enabled"] = request.form.get("email_reminders_enabled") == "on"
-        current["auto_reminders_enabled"] = request.form.get("auto_reminders_enabled") == "on"
-        save_settings(current)
-        flash("Email settings saved.", "success")
-        return redirect(url_for("settings"))
 
     # ---- Tax Details ----------------------------------------------------------
 
@@ -1370,8 +1519,7 @@ def register_routes(app):
         field = request.args.get("field", "")
         value = request.args.get("value", "").strip().upper()
         exclude_id = request.args.get("exclude_id", type=int)
-        allowed_fields = {"vehicle_number", "chassis_number", "engine_number", "owner_name", "mobile_number", "policy_number"}
-        if not field or not value or field not in allowed_fields:
+        if not field or not value:
             return jsonify({"exists": False})
         query = Vehicle.query.filter(getattr(Vehicle, field) == value)
         if exclude_id:
@@ -1386,7 +1534,7 @@ def register_routes(app):
     def ai_chat(session_id=None):
         if not ai_service.check_api_key():
             flash("API key not configured. Set it in Settings.", "error")
-            return render_template("ai_chat.html", messages=[], ai_enabled=False, chat_session=None)
+            return render_template("ai_chat.html", messages=[], ollama_running=False, chat_session=None)
 
         if request.method == "POST":
             user_msg = request.form.get("message", "").strip()
@@ -1426,7 +1574,7 @@ def register_routes(app):
             chat_session = ChatSession.query.get_or_404(session_id)
             messages = [{"role": m.role, "content": m.content} for m in chat_session.messages.order_by(ChatMessage.id).all()]
 
-        return render_template("ai_chat.html", messages=messages, ai_enabled=True, chat_session=chat_session)
+        return render_template("ai_chat.html", messages=messages, ollama_running=True, chat_session=chat_session)
 
     @app.route("/ai/chat/new")
     @login_required
@@ -1455,174 +1603,95 @@ def register_routes(app):
     def ai_parse_document():
         if not ai_service.check_api_key():
             flash("AI API key not configured. Set it in Settings.", "error")
-            return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=False, existing_vehicle=None, comparison=None)
+            return render_template("ai_document_parser.html", parsed_data=None,
+                                   ollama_running=False, recent_scans=recent_document_scans())
 
         if request.method == "POST":
             file = request.files.get("document")
-            ocr_text = ""
             if not file or file.filename == "":
                 flash("Please upload a document image.", "error")
-                last_scans = ScanHistory.query.order_by(ScanHistory.scanned_at.desc()).limit(3).all()
-                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True, existing_vehicle=None, comparison=None, last_scans=last_scans, ocr_text=ocr_text)
+                return render_template("ai_document_parser.html", parsed_data=None,
+                                       ollama_running=True, recent_scans=recent_document_scans())
 
             try:
                 import pytesseract
                 from PIL import Image
-                import io
-                import pymupdf
+                import os
                 tesseract_path = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
                 if os.path.exists(tesseract_path):
                     pytesseract.pytesseract.tesseract_cmd = tesseract_path
-
-                filename = (file.filename or "").lower()
-                if filename.endswith(".pdf"):
-                    doc = pymupdf.open(stream=file.read(), filetype="pdf")
-                    page_texts = []
-                    for page in doc:
-                        pix = page.get_pixmap(dpi=200)
-                        page_image = Image.open(io.BytesIO(pix.tobytes("png")))
-                        page_texts.append(pytesseract.image_to_string(page_image))
-                    ocr_text = "\n\n".join(t for t in page_texts if t and t.strip())
-                else:
-                    img = Image.open(file)
-                    ocr_text = pytesseract.image_to_string(img)
+                img = Image.open(file)
+                ocr_text = pytesseract.image_to_string(img)
             except Exception as exc:
                 flash(f"OCR failed: {exc}", "error")
-                last_scans = ScanHistory.query.order_by(ScanHistory.scanned_at.desc()).limit(3).all()
-                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True, existing_vehicle=None, comparison=None, last_scans=last_scans, ocr_text=ocr_text)
+                return render_template("ai_document_parser.html", parsed_data=None,
+                                       ollama_running=True, recent_scans=recent_document_scans())
 
             if not ocr_text.strip():
-                flash("No text could be extracted from the document.", "error")
-                last_scans = ScanHistory.query.order_by(ScanHistory.scanned_at.desc()).limit(3).all()
-                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True, existing_vehicle=None, comparison=None, last_scans=last_scans, ocr_text=ocr_text)
+                flash("No text could be extracted from the image.", "error")
+                return render_template("ai_document_parser.html", parsed_data=None,
+                                       ollama_running=True, recent_scans=recent_document_scans())
 
             try:
                 parsed_data = ai_service.parse_document_text(ocr_text)
             except Exception as exc:
                 flash(f"AI parsing failed: {exc}", "error")
-                last_scans = ScanHistory.query.order_by(ScanHistory.scanned_at.desc()).limit(3).all()
-                return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True, existing_vehicle=None, comparison=None, last_scans=last_scans, ocr_text=ocr_text)
+                return render_template("ai_document_parser.html", parsed_data=None,
+                                       ollama_running=True, recent_scans=recent_document_scans())
 
-            existing_vehicle = None
-            comparison = None
-            if parsed_data:
-                vnum = str(parsed_data.get("vehicle_number", "")).strip().upper()
-                chassis = str(parsed_data.get("chassis_number", "")).strip().upper()
-                if vnum or chassis:
-                    existing_vehicle = Vehicle.query.filter(
-                        db.or_(Vehicle.vehicle_number == vnum, Vehicle.chassis_number == chassis)
-                    ).first()
-
-                if existing_vehicle:
-                    comparison = ai_service.compare_vehicle_data(parsed_data, existing_vehicle)
-
-            # Save to scan history (keep last 3)
-            try:
-                scan_record = ScanHistory(
-                    vehicle_number=parsed_data.get("vehicle_number", ""),
-                    chassis_number=parsed_data.get("chassis_number", ""),
-                    engine_number=parsed_data.get("engine_number", ""),
-                    owner_name=parsed_data.get("owner_name", ""),
-                    address=parsed_data.get("address", ""),
-                    vehicle_type=parsed_data.get("vehicle_type", ""),
-                    registration_date=parse_date(parsed_data.get("registration_date")),
-                    puc_expiry=parse_date(parsed_data.get("puc_expiry")),
-                    fitness_expiry=parse_date(parsed_data.get("fitness_expiry")),
-                    permit_expiry=parse_date(parsed_data.get("permit_expiry")),
-                    national_permit_number=parsed_data.get("national_permit_number", ""),
-                    tax_from=parse_date(parsed_data.get("tax_from")),
-                    tax_expiry=parse_date(parsed_data.get("tax_expiry")),
-                    tax_mode=parsed_data.get("tax_mode", ""),
-                    insurance_expiry=parse_date(parsed_data.get("insurance_expiry")),
-                    insurance_company=parsed_data.get("insurance_company", ""),
-                    policy_number=parsed_data.get("policy_number", ""),
-                    document_type=parsed_data.get("document_type", "Unknown"),
-                )
-                db.session.add(scan_record)
-                db.session.commit()
-
-                # Keep only last 3 scans
-                old_scans = ScanHistory.query.order_by(ScanHistory.scanned_at.desc()).offset(3).all()
-                for old in old_scans:
-                    db.session.delete(old)
-                db.session.commit()
-            except Exception:
-                db.session.rollback()
-
-            # Fetch last 3 scan history
-            last_scans = ScanHistory.query.order_by(ScanHistory.scanned_at.desc()).limit(3).all()
+            existing_vehicle = find_existing_vehicle(parsed_data) if parsed_data else None
+            scan = save_document_scan(file.filename, parsed_data or {}, ocr_text, existing_vehicle)
 
             return render_template(
                 "ai_document_parser.html",
                 parsed_data=parsed_data,
                 ocr_text=ocr_text,
-                ai_enabled=True,
+                ollama_running=True,
                 existing_vehicle=existing_vehicle,
-                comparison=comparison,
-                last_scans=last_scans,
+                current_scan_id=scan.id,
+                recent_scans=recent_document_scans(),
             )
 
-        last_scans = ScanHistory.query.order_by(ScanHistory.scanned_at.desc()).limit(3).all()
-        return render_template("ai_document_parser.html", parsed_data=None, ai_enabled=True, existing_vehicle=None, comparison=None, last_scans=last_scans)
+        return render_template("ai_document_parser.html", parsed_data=None, ollama_running=True,
+                               existing_vehicle=None, recent_scans=recent_document_scans())
 
-    @app.route("/ai/scan-history/<int:scan_id>")
+    @app.route("/ai/parse-document/scan/<int:scan_id>")
     @login_required
-    def ai_scan_view(scan_id):
-        scan = ScanHistory.query.get_or_404(scan_id)
-        parsed_data = scan.to_dict()
-        parsed_data.pop("id", None)
-        parsed_data.pop("scanned_at", None)
-
-        existing_vehicle = None
-        comparison = None
-        vnum = str(parsed_data.get("vehicle_number", "")).strip().upper()
-        chassis = str(parsed_data.get("chassis_number", "")).strip().upper()
-        if vnum or chassis:
-            existing_vehicle = Vehicle.query.filter(
-                db.or_(Vehicle.vehicle_number == vnum, Vehicle.chassis_number == chassis)
-            ).first()
-        if existing_vehicle:
-            comparison = ai_service.compare_vehicle_data(parsed_data, existing_vehicle)
-
-        last_scans = ScanHistory.query.order_by(ScanHistory.scanned_at.desc()).limit(3).all()
+    def ai_parse_view_scan(scan_id):
+        """View a previous scan (read-only)."""
+        scan = DocumentScan.query.get_or_404(scan_id)
+        parsed_data = scan.data_dict()
+        if not parsed_data:
+            flash("This scan has no extracted data.", "error")
+            return redirect(url_for("ai_parse_document"))
         return render_template(
             "ai_document_parser.html",
+            view_scan=scan,
             parsed_data=parsed_data,
-            ocr_text=None,
-            ai_enabled=True,
-            existing_vehicle=existing_vehicle,
-            comparison=comparison,
-            last_scans=last_scans,
+            ocr_text=scan.ocr_text,
+            ollama_running=True,
+            existing_vehicle=find_existing_vehicle(parsed_data),
+            recent_scans=recent_document_scans(),
         )
 
-    @app.route("/ai/scan-history/<int:scan_id>/edit", methods=["POST"])
+    @app.route("/ai/parse-document/scan/<int:scan_id>/edit")
     @login_required
-    def ai_scan_edit(scan_id):
-        scan = ScanHistory.query.get_or_404(scan_id)
-        parsed_data = scan.to_dict()
-        parsed_data.pop("id", None)
-        parsed_data.pop("scanned_at", None)
-
-        existing_vehicle = None
-        comparison = None
-        vnum = str(parsed_data.get("vehicle_number", "")).strip().upper()
-        chassis = str(parsed_data.get("chassis_number", "")).strip().upper()
-        if vnum or chassis:
-            existing_vehicle = Vehicle.query.filter(
-                db.or_(Vehicle.vehicle_number == vnum, Vehicle.chassis_number == chassis)
-            ).first()
-        if existing_vehicle:
-            comparison = ai_service.compare_vehicle_data(parsed_data, existing_vehicle)
-
-        last_scans = ScanHistory.query.order_by(ScanHistory.scanned_at.desc()).limit(3).all()
+    def ai_parse_edit_scan(scan_id):
+        """Load a previous scan into the editable form."""
+        scan = DocumentScan.query.get_or_404(scan_id)
+        parsed_data = scan.data_dict()
+        if not parsed_data:
+            flash("This scan has no extracted data.", "error")
+            return redirect(url_for("ai_parse_document"))
         return render_template(
             "ai_document_parser.html",
+            edit_scan=scan,
             parsed_data=parsed_data,
-            ocr_text=None,
-            ai_enabled=True,
-            existing_vehicle=existing_vehicle,
-            comparison=comparison,
-            last_scans=last_scans,
+            ocr_text=scan.ocr_text,
+            ollama_running=True,
+            existing_vehicle=find_existing_vehicle(parsed_data),
+            current_scan_id=scan.id,
+            recent_scans=recent_document_scans(),
         )
 
     @app.route("/ai/parse-document/add", methods=["POST"])
@@ -1630,7 +1699,7 @@ def register_routes(app):
     def ai_parse_add_vehicle():
         vnum = request.form.get("vehicle_number", "").strip().upper()
         chassis = request.form.get("chassis_number", "").strip().upper()
-        accepted_fields = request.form.getlist("accepted_fields")
+        scan_id = request.form.get("scan_id", type=int)
 
         existing = Vehicle.query.filter(
             db.or_(Vehicle.vehicle_number == vnum, Vehicle.chassis_number == chassis)
@@ -1640,54 +1709,46 @@ def register_routes(app):
             updates = {
                 "engine_number": request.form.get("engine_number", "").strip().upper(),
                 "owner_name": request.form.get("owner_name", "").strip(),
-                "address": request.form.get("address", "").strip(),
                 "mobile_number": request.form.get("mobile_number", "").strip(),
-                "owner_email": request.form.get("owner_email", "").strip(),
                 "vehicle_type": request.form.get("vehicle_type", "").strip(),
                 "registration_date": parse_date(request.form.get("registration_date")),
                 "puc_expiry": parse_date(request.form.get("puc_expiry")),
                 "fitness_expiry": parse_date(request.form.get("fitness_expiry")),
                 "permit_expiry": parse_date(request.form.get("permit_expiry")),
-                "national_permit_number": request.form.get("national_permit_number", "").strip().upper(),
-                "tax_from": parse_date(request.form.get("tax_from")),
-                "tax_expiry": parse_date(request.form.get("tax_expiry")),
-                "tax_mode": request.form.get("tax_mode", "").strip(),
                 "insurance_expiry": parse_date(request.form.get("insurance_expiry")),
                 "insurance_company": request.form.get("insurance_company", "").strip(),
                 "policy_number": request.form.get("policy_number", "").strip(),
+                "tax_from": parse_date(request.form.get("tax_from")),
+                "tax_expiry": parse_date(request.form.get("tax_expiry")),
+                "tax_mode": request.form.get("tax_mode", "").strip(),
+                "tax_amount": float(request.form.get("tax_amount") or 0),
+                "permit_from": parse_date(request.form.get("permit_from")),
+                "permit_auth_no": request.form.get("permit_auth_no", "").strip(),
+                "permit_address": request.form.get("permit_address", "").strip(),
             }
             updated_fields = []
-            auto_filled = []
-            user_accepted = []
             for field, value in updates.items():
                 if value:
                     old_val = getattr(existing, field)
-                    is_empty = False
-                    if field.endswith("_date") or field.endswith("_expiry"):
-                        is_empty = old_val is None
+                    if field.endswith("_date") or field.endswith("_expiry") or field.endswith("_from"):
+                        if old_val is None:
+                            setattr(existing, field, value)
+                            updated_fields.append(field)
                     elif isinstance(value, str) and not value:
                         continue
                     else:
-                        is_empty = not old_val or str(old_val).strip() == ""
-
-                    if is_empty:
-                        setattr(existing, field, value)
-                        updated_fields.append(field)
-                        auto_filled.append(field)
-                    elif old_val != value and field in accepted_fields:
-                        setattr(existing, field, value)
-                        updated_fields.append(field)
-                        user_accepted.append(field)
+                        if old_val != value:
+                            setattr(existing, field, value)
+                            updated_fields.append(field)
 
             existing.updated_at = datetime.utcnow()
             db.session.commit()
-            parts = []
-            if auto_filled:
-                parts.append(f"{len(auto_filled)} auto-filled")
-            if user_accepted:
-                parts.append(f"{len(user_accepted)} accepted")
-            summary = " and ".join(parts) if parts else "no changes"
-            flash(f"Vehicle {existing.vehicle_number} updated: {summary}.", "success")
+            if scan_id:
+                scan = DocumentScan.query.get(scan_id)
+                if scan:
+                    scan.vehicle_id = existing.id
+                    db.session.commit()
+            flash(f"Vehicle {existing.vehicle_number} updated with {len(updated_fields)} new fields.", "success")
             return redirect(url_for("view_vehicle", vehicle_id=existing.id))
 
         vehicle = Vehicle(
@@ -1695,24 +1756,30 @@ def register_routes(app):
             chassis_number=chassis,
             engine_number=request.form.get("engine_number", "").strip().upper(),
             owner_name=request.form.get("owner_name", "").strip(),
-            address=request.form.get("address", "").strip(),
-            owner_email=request.form.get("owner_email", "").strip(),
             mobile_number=request.form.get("mobile_number", "").strip(),
             vehicle_type=request.form.get("vehicle_type", "").strip(),
             registration_date=parse_date(request.form.get("registration_date")),
             puc_expiry=parse_date(request.form.get("puc_expiry")),
             fitness_expiry=parse_date(request.form.get("fitness_expiry")),
             permit_expiry=parse_date(request.form.get("permit_expiry")),
-            national_permit_number=request.form.get("national_permit_number", "").strip().upper(),
-            tax_from=parse_date(request.form.get("tax_from")),
-            tax_expiry=parse_date(request.form.get("tax_expiry")),
-            tax_mode=request.form.get("tax_mode", "").strip(),
             insurance_expiry=parse_date(request.form.get("insurance_expiry")),
             insurance_company=request.form.get("insurance_company", "").strip(),
             policy_number=request.form.get("policy_number", "").strip(),
+            tax_from=parse_date(request.form.get("tax_from")),
+            tax_expiry=parse_date(request.form.get("tax_expiry")),
+            tax_mode=request.form.get("tax_mode", "").strip(),
+            tax_amount=float(request.form.get("tax_amount") or 0),
+            permit_from=parse_date(request.form.get("permit_from")),
+            permit_auth_no=request.form.get("permit_auth_no", "").strip(),
+            permit_address=request.form.get("permit_address", "").strip(),
         )
         db.session.add(vehicle)
         db.session.commit()
+        if scan_id:
+            scan = DocumentScan.query.get(scan_id)
+            if scan:
+                scan.vehicle_id = vehicle.id
+                db.session.commit()
         resequence_sr_nos()
         flash(f"Vehicle {vehicle.vehicle_number} added from parsed document.", "success")
         return redirect(url_for("vehicle_list"))
@@ -1724,16 +1791,16 @@ def register_routes(app):
     def ai_insights():
         if not ai_service.check_api_key():
             flash("AI API key not configured. Set it in Settings.", "error")
-            return render_template("ai_insights.html", insights=None, ai_enabled=False)
+            return render_template("ai_insights.html", insights=None, ollama_running=False)
 
         vehicles = Vehicle.query.all()
         try:
             insights = ai_service.generate_insights(vehicles)
         except Exception as exc:
             flash(f"Failed to generate insights: {exc}", "error")
-            return render_template("ai_insights.html", insights=None, ai_enabled=True)
+            return render_template("ai_insights.html", insights=None, ollama_running=True)
 
-        return render_template("ai_insights.html", insights=insights, ai_enabled=True)
+        return render_template("ai_insights.html", insights=insights, ollama_running=True)
 
 
 def update_vehicle_from_record(vehicle, record):
@@ -1742,10 +1809,8 @@ def update_vehicle_from_record(vehicle, record):
         vehicle.engine_number = str(record.get("engine_number", "") or vehicle.engine_number or "").strip().upper()
     if "owner_name" in record:
         vehicle.owner_name = str(record.get("owner_name", "") or vehicle.owner_name or "").strip()
-    if "address" in record:
-        vehicle.address = str(record.get("address", "") or vehicle.address or "").strip()
     if "owner_email" in record:
-        vehicle.owner_email = str(record.get("owner_email", "") or vehicle.owner_email or "").strip()
+        vehicle.owner_email = email_service.normalize_emails(str(record.get("owner_email", "") or vehicle.owner_email or ""))
     if "mobile_number" in record:
         vehicle.mobile_number = str(record.get("mobile_number", "") or vehicle.mobile_number or "").strip()
     if "vehicle_type" in record:
@@ -1790,8 +1855,6 @@ def update_vehicle_from_record(vehicle, record):
         parsed = parse_date(record.get("national_permit_expiry"))
         if parsed:
             vehicle.national_permit_expiry = parsed
-    if "national_permit_number" in record:
-        vehicle.national_permit_number = str(record.get("national_permit_number", "") or vehicle.national_permit_number or "").strip().upper()
     if "state_permit_expiry" in record:
         parsed = parse_date(record.get("state_permit_expiry"))
         if parsed:
@@ -1822,6 +1885,11 @@ def validate_vehicle_form(form, editing_id=None):
         errors.append("Owner Name is required.")
     if mobile_number and not mobile_number.replace("+", "").isdigit():
         errors.append("Mobile Number should be numeric.")
+    owner_email = form.get("owner_email", "").strip()
+    if owner_email:
+        ok, err = email_service.validate_emails(owner_email)
+        if not ok:
+            errors.append(err)
 
     if vehicle_number:
         query = Vehicle.query.filter(Vehicle.vehicle_number == vehicle_number.upper())
@@ -1843,4 +1911,4 @@ def validate_vehicle_form(form, editing_id=None):
 app = create_app()
 
 if __name__ == "__main__":
-    app.run(debug=False, host="0.0.0.0", port=5000)
+    app.run(debug=True, host="0.0.0.0", port=5000)

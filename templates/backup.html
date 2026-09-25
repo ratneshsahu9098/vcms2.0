@@ -4,8 +4,10 @@
 
 {% block content %}
 <div class="panel">
-  <h3 class="panel-title"><i class="fa-solid fa-database"></i> Database Backup</h3>
-  <p class="text-muted">Create a timestamped copy of the database, or restore a previous backup.</p>
+  <h3 class="panel-title"><i class="fa-solid fa-database"></i> Backup &amp; Restore</h3>
+  <p class="text-muted">Create a timestamped archive of the database <b>plus settings</b> — API keys, AI models,
+     SMTP email and reminder config are included in every <code>.zip</code> backup. Legacy <code>.db</code>
+     backups restore the database only.</p>
 
   <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px;">
     <form method="POST" style="display:inline;">
@@ -16,7 +18,7 @@
       <input type="hidden" name="action" value="upload_restore">
       <label class="btn btn-outline-secondary" style="cursor:pointer;">
         <i class="fa-solid fa-file-arrow-up"></i> Upload & Restore
-        <input type="file" name="backup_file" accept=".db" style="display:none;" onchange="confirmUpload(this)">
+        <input type="file" name="backup_file" accept=".db,.zip" style="display:none;" onchange="confirmUpload(this)">
       </label>
     </form>
   </div>
@@ -28,7 +30,6 @@
       <thead>
         <tr>
           <th>Backup File</th>
-          <th>Date</th>
           <th>Created</th>
           <th>Size</th>
           <th>Actions</th>
@@ -37,16 +38,21 @@
       <tbody>
         {% for b in backups %}
         <tr>
-          <td style="font-weight:600; color:var(--text);">{{ b.name }}</td>
-          <td>{{ b.date }}</td>
+          <td style="font-weight:600; color:var(--text);">{{ b.name }}
+            {% if b.name.endswith('.zip') %}
+            <span class="badge-status status-green" title="Includes database + settings (API keys, models, SMTP)">Full</span>
+            {% else %}
+            <span class="badge-status status-gray" title="Legacy backup: database only">DB only</span>
+            {% endif %}
+          </td>
           <td>{{ b.created }}</td>
           <td>{{ b.size }}</td>
           <td class="actions-cell">
-            <a href="{{ url_for('download_backup', rel_path=b.rel_path) }}" title="Download"><i class="fa-solid fa-download"></i></a>
+            <a href="{{ url_for('download_backup', name=b.name) }}" title="Download"><i class="fa-solid fa-download"></i></a>
             <form method="POST" class="inline-form"
-                  onsubmit="return confirm('Restore database from {{ b.name }}? Current data will be replaced.');">
+                  onsubmit="return confirm('Restore {{ b.name }}? Current database and settings will be replaced.');">
               <input type="hidden" name="action" value="restore">
-              <input type="hidden" name="backup_path" value="{{ b.rel_path }}">
+              <input type="hidden" name="backup_name" value="{{ b.name }}">
               <button type="submit" title="Restore"><i class="fa-solid fa-rotate-left"></i></button>
             </form>
           </td>
@@ -120,12 +126,18 @@
       <tbody>
         {% for b in gdrive_backups %}
         <tr>
-          <td style="font-weight:600; color:var(--text);">{{ b.name }}</td>
+          <td style="font-weight:600; color:var(--text);">{{ b.name }}
+            {% if b.name.endswith('.zip') %}
+            <span class="badge-status status-green" title="Includes database + settings (API keys, models, SMTP)">Full</span>
+            {% else %}
+            <span class="badge-status status-gray" title="Legacy backup: database only">DB only</span>
+            {% endif %}
+          </td>
           <td>{{ b.created }}</td>
           <td>{{ b.size }}</td>
           <td class="actions-cell">
             <form method="POST" action="{{ url_for('gdrive_restore') }}" class="inline-form"
-                  onsubmit="return confirm('Restore from {{ b.name }}? Current database will be replaced.');">
+                  onsubmit="return confirm('Restore from {{ b.name }}? Current database and settings will be replaced.');">
               <input type="hidden" name="file_id" value="{{ b.id }}">
               <button type="submit" title="Restore from Google Drive"><i class="fa-solid fa-rotate-left"></i></button>
             </form>
@@ -153,7 +165,7 @@
 <script>
 function confirmUpload(input) {
   if (input.files.length > 0) {
-    if (confirm('Restore database from "' + input.files[0].name + '"? Current data will be replaced.')) {
+    if (confirm('Restore "' + input.files[0].name + '"? Current database and settings will be replaced.')) {
       document.getElementById('uploadForm').submit();
     } else {
       input.value = '';

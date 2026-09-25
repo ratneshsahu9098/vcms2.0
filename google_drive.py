@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import Flow
+from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -206,41 +206,17 @@ def delete_old_backups(service=None, folder_id=None):
                 pass
 
 
-def _get_client_config():
-    client_id = os.environ.get("VCMS_GDRIVE_CLIENT_ID", "")
-    client_secret = os.environ.get("VCMS_GDRIVE_CLIENT_SECRET", "")
-    if client_id and client_secret:
-        return {
-            "web": {
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-            }
-        }
-    if os.path.exists(CLIENT_SECRET_FILE):
-        with open(CLIENT_SECRET_FILE) as f:
-            return json.load(f)
-    return None
-
-
-def start_oauth_flow(redirect_uri):
-    config = _get_client_config()
-    if not config:
-        return None, "Google Drive credentials not found. Set VCMS_GDRIVE_CLIENT_ID/SECRET in .env or place client_secret.json."
-    flow = Flow.from_client_config(config, scopes=SCOPES, redirect_uri=redirect_uri)
+def start_oauth_flow():
+    if not os.path.exists(CLIENT_SECRET_FILE):
+        return None, "client_secret.json not found. Please download it from Google Cloud Console."
+    flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
     return flow, None
 
 
-def save_token_from_code(code, redirect_uri, code_verifier=None):
+def save_token_from_code(code, redirect_uri):
     try:
-        config = _get_client_config()
-        if not config:
-            return {"ok": False, "error": "Google Drive credentials not found."}
-        flow = Flow.from_client_config(config, scopes=SCOPES, redirect_uri=redirect_uri)
-        if code_verifier:
-            flow.code_verifier = code_verifier
-        flow.fetch_token(code=code)
+        flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
+        flow.fetch_token(code=code, redirect_uri=redirect_uri)
         creds = flow.credentials
         _save_token(creds)
         return {"ok": True}

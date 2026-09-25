@@ -168,7 +168,6 @@ a:hover { text-decoration: underline; }
 .flash-success { background: var(--success-bg); color: var(--green); border: 1px solid var(--success-border); }
 .flash-error { background: var(--danger-bg); color: var(--red); border: 1px solid var(--danger-border); }
 .flash-info { background: var(--active-bg); color: var(--blue); border: 1px solid var(--active-border); }
-.flash-warning { background: var(--warning-bg); color: var(--orange); border: 1px solid var(--warning-border); }
 
 /* ---------- Stat cards ---------- */
 .stat-grid {
@@ -281,25 +280,34 @@ a:hover { text-decoration: underline; }
 }
 .table-main tbody tr:hover { background: var(--row-hover); }
 
-.badge {
-  display: inline-block;
-  padding: 3px 9px;
-  border-radius: 6px;
-  font-size: 0.78rem;
-  font-weight: 600;
-}
-.badge-green { background: var(--success-bg); color: var(--green); }
-.badge-yellow { background: var(--warning-bg); color: var(--yellow); }
-.badge-red { background: var(--danger-bg); color: var(--red); }
-.badge-orange { background: var(--caution-bg); color: var(--orange); }
-.badge-gray { background: var(--gray-bg); color: var(--gray); }
-
 .badge-status {
   display: inline-block;
   padding: 3px 9px;
   border-radius: 6px;
   font-size: 0.78rem;
   font-weight: 600;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.badge-green { background: var(--success-bg); color: var(--green); }
+.badge-red { background: var(--danger-bg); color: var(--red); }
+.badge-yellow { background: var(--warning-bg); color: var(--yellow); }
+.badge-blue { background: rgba(59,130,246,0.15); color: var(--blue); }
+.badge-gray { background: var(--gray-bg); color: var(--text-muted); }
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
 }
 .status-green { background: var(--success-bg); color: var(--green); }
 .status-yellow { background: var(--warning-bg); color: var(--yellow); }
@@ -347,19 +355,12 @@ a:hover { text-decoration: underline; }
 .btn-primary:hover { filter: brightness(1.1); }
 .btn-outline-secondary { color: var(--text-muted); border: 1px solid var(--border); background: transparent; }
 .btn-outline-secondary:hover { background: var(--charcoal-light); color: var(--text); }
+.btn-outline-info { color: var(--blue); border: 1px solid var(--blue); background: transparent; }
+.btn-outline-info:hover { background: rgba(59,130,246,0.12); color: var(--blue); }
 .btn-outline-danger { color: var(--red); border: 1px solid var(--red); background: transparent; }
 .btn-outline-danger:hover { background: var(--danger-bg); }
 .btn-outline-success { color: var(--green); border: 1px solid var(--green); background: transparent; }
-.btn-outline-success:hover { background: var(--success-bg); }
 .btn-success { background: var(--green); border: 1px solid var(--green); color: var(--btn-text); }
-.btn-outline-warning { color: var(--orange); border: 1px solid var(--orange); background: transparent; }
-.btn-outline-warning:hover { background: var(--caution-bg); }
-.btn-outline-info { color: var(--blue); border: 1px solid var(--blue); background: transparent; }
-.btn-outline-info:hover { background: var(--active-bg); }
-.btn-lg { padding: 12px 24px; font-size: 1rem; }
-.btn-sm { padding: 4px 10px; font-size: 0.82rem; }
-.page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
-.page-header .page-title { font-size: 1.3rem; font-weight: 700; color: var(--text); margin: 0; }
 
 /* ---------- Import / export ---------- */
 .import-form { display: flex; gap: 12px; align-items: center; margin-bottom: 20px; }
@@ -427,11 +428,6 @@ a:hover { text-decoration: underline; }
 .doc-days-left.caution { color: var(--yellow); }
 .doc-days-left { color: var(--green); }
 .doc-remind-link { display: block; margin-top: 8px; font-size: 0.8rem; color: var(--green); }
-.doc-email-link {
-  display: inline-block; margin-top: 6px; font-size: 0.8rem; color: var(--blue);
-  background: none; border: none; cursor: pointer; padding: 0; font-family: inherit;
-}
-.doc-email-link:hover { text-decoration: underline; }
 
 /* ---------- Settings ---------- */
 .settings-list { display: flex; flex-direction: column; gap: 10px; }
@@ -460,6 +456,7 @@ a:hover { text-decoration: underline; }
 /* ---------- Bulk Actions ---------- */
 .bulk-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   margin-bottom: 12px;
@@ -523,265 +520,3 @@ code { background: var(--code-bg); color: var(--green); }
   transition: all 0.15s;
 }
 .theme-toggle:hover { color: var(--text); border-color: var(--text-muted); }
-
-/* ============================================================
-   UI/UX ANIMATIONS
-   ============================================================ */
-
-/* ---------- Keyframes ---------- */
-@keyframes fadeSlideUp {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes slideInRight {
-  from { opacity: 0; transform: translateX(-14px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-
-@keyframes slideDown {
-  from { opacity: 0; transform: translateY(-10px); max-height: 0; }
-  to { opacity: 1; transform: translateY(0); max-height: 200px; }
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
-}
-
-@keyframes scaleIn {
-  from { opacity: 0; transform: scale(0.92); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-
-@keyframes countUp {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* ---------- Page entrance ---------- */
-.content {
-  animation: fadeSlideUp 0.3s ease-out;
-}
-
-/* ---------- Auth card entrance ---------- */
-.auth-card {
-  animation: scaleIn 0.35s ease-out;
-}
-
-/* ---------- Stat cards ---------- */
-.stat-card {
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-}
-.stat-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 6px 20px var(--shadow);
-  border-color: var(--blue);
-}
-
-.stat-value {
-  animation: countUp 0.4s ease-out both;
-}
-
-/* Staggered stat card entrance */
-.stat-card:nth-child(1) { animation: fadeSlideUp 0.3s ease-out 0.0s both; }
-.stat-card:nth-child(2) { animation: fadeSlideUp 0.3s ease-out 0.05s both; }
-.stat-card:nth-child(3) { animation: fadeSlideUp 0.3s ease-out 0.10s both; }
-.stat-card:nth-child(4) { animation: fadeSlideUp 0.3s ease-out 0.15s both; }
-.stat-card:nth-child(5) { animation: fadeSlideUp 0.3s ease-out 0.20s both; }
-.stat-card:nth-child(6) { animation: fadeSlideUp 0.3s ease-out 0.25s both; }
-
-/* ---------- Document overview cards ---------- */
-.doc-card {
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-}
-.doc-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 14px var(--shadow);
-  border-color: var(--blue);
-}
-
-.doc-card:nth-child(1) { animation: fadeSlideUp 0.3s ease-out 0.1s both; }
-.doc-card:nth-child(2) { animation: fadeSlideUp 0.3s ease-out 0.15s both; }
-.doc-card:nth-child(3) { animation: fadeSlideUp 0.3s ease-out 0.20s both; }
-.doc-card:nth-child(4) { animation: fadeSlideUp 0.3s ease-out 0.25s both; }
-.doc-card:nth-child(5) { animation: fadeSlideUp 0.3s ease-out 0.30s both; }
-
-/* ---------- Activity panels ---------- */
-.panel {
-  animation: fadeSlideUp 0.3s ease-out 0.15s both;
-}
-
-/* ---------- Flash messages ---------- */
-.flash {
-  animation: slideDown 0.3s ease-out;
-}
-
-/* ---------- Sidebar nav links ---------- */
-.sidebar-nav a {
-  transition: background 0.15s ease, color 0.15s ease, padding-left 0.15s ease;
-}
-.sidebar-nav a:hover {
-  padding-left: 18px;
-}
-.sidebar-nav a.active {
-  animation: slideInRight 0.2s ease-out;
-}
-
-/* ---------- Buttons ---------- */
-.btn {
-  transition: transform 0.1s ease, box-shadow 0.15s ease, filter 0.15s ease, background 0.15s ease;
-}
-.btn:active {
-  transform: scale(0.97);
-}
-.btn-primary:hover {
-  box-shadow: 0 2px 10px rgba(59, 130, 246, 0.3);
-}
-
-/* ---------- Table rows ---------- */
-.table-main tbody tr {
-  transition: background 0.15s ease;
-}
-
-/* ---------- Actions icons ---------- */
-.actions-cell a, .actions-cell button {
-  transition: transform 0.15s ease, color 0.15s ease;
-}
-.actions-cell a:hover {
-  transform: scale(1.2);
-}
-.actions-cell button:hover {
-  transform: scale(1.2);
-}
-
-/* ---------- Badge pulse for urgent statuses ---------- */
-.status-red {
-  animation: pulse 2s ease-in-out infinite;
-}
-.status-orange {
-  animation: pulse 2.5s ease-in-out infinite;
-}
-
-/* ---------- Dot pulse ---------- */
-.dot-red {
-  animation: pulse 2s ease-in-out infinite;
-}
-.dot-orange {
-  animation: pulse 2.5s ease-in-out infinite;
-}
-
-/* ---------- Filter bar ---------- */
-.filter-bar {
-  animation: fadeSlideUp 0.25s ease-out 0.05s both;
-}
-
-/* ---------- Form inputs focus ---------- */
-.form-control, .form-select {
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-/* ---------- Report tabs ---------- */
-.report-tab {
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
-}
-.report-tab:hover {
-  transform: translateY(-1px);
-}
-.report-tab:active {
-  transform: scale(0.97);
-}
-
-/* ---------- Detail card ---------- */
-.detail-card {
-  animation: scaleIn 0.3s ease-out;
-}
-
-/* ---------- Doc status items staggered ---------- */
-.doc-status-item:nth-child(1) { animation: fadeSlideUp 0.25s ease-out 0.05s both; }
-.doc-status-item:nth-child(2) { animation: fadeSlideUp 0.25s ease-out 0.10s both; }
-.doc-status-item:nth-child(3) { animation: fadeSlideUp 0.25s ease-out 0.15s both; }
-.doc-status-item:nth-child(4) { animation: fadeSlideUp 0.25s ease-out 0.20s both; }
-.doc-status-item:nth-child(5) { animation: fadeSlideUp 0.25s ease-out 0.25s both; }
-
-/* ---------- Theme toggle rotation ---------- */
-.theme-toggle {
-  transition: all 0.2s ease;
-}
-.theme-toggle:hover {
-  transform: rotate(30deg);
-}
-
-/* ---------- Upload area ---------- */
-.upload-area {
-  transition: border-color 0.2s ease, background 0.2s ease, transform 0.15s ease;
-}
-.upload-area:hover {
-  transform: scale(1.01);
-}
-
-/* ---------- Back button ---------- */
-.btn-back {
-  transition: all 0.15s ease;
-}
-.btn-back:hover {
-  transform: translateX(-2px);
-}
-
-/* ---------- Checkbox check animation ---------- */
-.col-check input[type="checkbox"] {
-  transition: transform 0.1s ease;
-}
-.col-check input[type="checkbox"]:active {
-  transform: scale(1.2);
-}
-
-/* ---------- Loading spinner ---------- */
-.btn-loading {
-  position: relative;
-  pointer-events: none;
-  opacity: 0.7;
-}
-.btn-loading::after {
-  content: "";
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  top: 50%;
-  left: 50%;
-  margin: -8px 0 0 -8px;
-  border: 2px solid rgba(255,255,255,0.3);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-}
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* ---------- Skeleton shimmer (for future loading states) ---------- */
-.skeleton {
-  background: linear-gradient(90deg, var(--charcoal-light) 25%, var(--charcoal) 50%, var(--charcoal-light) 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-  border-radius: 6px;
-}
-
-/* ---------- Reduced motion ---------- */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}

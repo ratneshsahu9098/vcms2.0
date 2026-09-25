@@ -34,12 +34,12 @@
       <a href="{{ url_for('vehicle_qr_dates', vehicle_id=vehicle.id) }}" target="_blank" class="btn btn-outline-secondary"><i class="fa-solid fa-qrcode"></i> QR & Dates</a>
       <a href="{{ url_for('whatsapp_expired', vehicle_id=vehicle.id) }}" target="_blank" class="btn btn-outline-success"><i class="fa-brands fa-whatsapp"></i> Send Expiry Reminder</a>
       <a href="{{ url_for('whatsapp_reminder', vehicle_id=vehicle.id, document_label='all') }}" target="_blank" class="btn btn-outline-success"><i class="fa-brands fa-whatsapp"></i> Send All Details</a>
-      {% if vehicle.owner_email %}
       <form method="POST" action="{{ url_for('email_reminder', vehicle_id=vehicle.id) }}" class="inline-form" style="display:inline;">
-        <button type="submit" class="btn btn-outline-info"><i class="fa-solid fa-envelope"></i> Send Email Reminder</button>
+        <button type="submit" title="{% if vehicle.owner_email %}Send expiry reminder email to {{ vehicle.owner_email }}{% else %}No email address set - edit vehicle to add one{% endif %}" class="btn btn-outline-info"><i class="fa-solid fa-envelope" style="color:{{ '#3b82f6' if vehicle.owner_email else 'var(--text-muted)' }};"></i> Send Email Reminder</button>
       </form>
-      {% endif %}
-      <button type="button" id="btnSendAllDetails" class="btn btn-outline-success" onclick="document.getElementById('sendAllDetailsForm').submit();"><i class="fa-solid fa-paper-plane"></i> Send All Details</button>
+      <form method="POST" action="{{ url_for('email_all_details', vehicle_id=vehicle.id) }}" class="inline-form" style="display:inline;">
+        <button type="submit" title="{% if vehicle.owner_email %}Send all details email to {{ vehicle.owner_email }}{% else %}No email address set - edit vehicle to add one{% endif %}" class="btn btn-outline-info"><i class="fa-solid fa-envelope-open-text" style="color:{{ '#60a5fa' if vehicle.owner_email else 'var(--text-muted)' }};"></i> Send All Details (Email)</button>
+      </form>
       <a href="https://wa.me/{{ vehicle.mobile_number }}" target="_blank" class="btn btn-outline-success"><i class="fa-brands fa-whatsapp"></i> WhatsApp</a>
       <a href="tel:{{ vehicle.mobile_number }}" class="btn btn-outline-secondary"><i class="fa-solid fa-phone"></i> Call</a>
     </div>
@@ -58,6 +58,9 @@
     <div><span class="detail-label">Insurance Company</span><span>{{ vehicle.insurance_company or '—' }}</span></div>
     <div><span class="detail-label">Policy Number</span><span>{{ vehicle.policy_number or '—' }}</span></div>
     <div><span class="detail-label">Pollution Cert. No.</span><span>{{ vehicle.pollution_certificate_number or '—' }}</span></div>
+    <div><span class="detail-label">Permit From</span><span>{{ vehicle.permit_from.strftime('%d-%m-%Y') if vehicle.permit_from else '—' }}</span></div>
+    <div><span class="detail-label">Permit Auth No.</span><span>{{ vehicle.permit_auth_no or '—' }}</span></div>
+    <div><span class="detail-label">Address</span><span>{{ vehicle.permit_address or '—' }}</span></div>
   </div>
 
   <h3 class="section-heading">Compliance Documents</h3>
@@ -82,7 +85,7 @@
       {% if vehicle.owner_email %}
       <form method="POST" action="{{ url_for('email_reminder', vehicle_id=vehicle.id) }}" class="inline-form">
         <input type="hidden" name="force" value="1">
-        <button type="submit" class="doc-remind-link doc-email-link">
+        <button type="submit" class="doc-remind-link" style="background:none; border:none; cursor:pointer; color:var(--blue); padding:0;">
           <i class="fa-solid fa-envelope"></i> Send Email
         </button>
       </form>
@@ -102,9 +105,4 @@
     Last updated {{ vehicle.updated_at.strftime('%d %b %Y, %I:%M %p') }}
   </p>
 </div>
-
-<form id="sendAllDetailsForm" method="POST" action="{{ url_for('email_all_vehicle_details') }}" style="display:none;">
-  <input type="hidden" name="vehicle_ids" value="{{ vehicle.id }}">
-  <input type="hidden" name="email_to" value="{{ vehicle.owner_email or '' }}">
-</form>
 {% endblock %}

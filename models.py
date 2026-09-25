@@ -1,4 +1,5 @@
 from datetime import datetime, date
+import json
 
 from flask_sqlalchemy import SQLAlchemy
 
@@ -42,8 +43,8 @@ class Vehicle(db.Model):
     chassis_number = db.Column(db.String(50), unique=True, nullable=False, index=True)
     engine_number = db.Column(db.String(50))
     owner_name = db.Column(db.String(120), nullable=False)
-    owner_email = db.Column(db.String(120))
     mobile_number = db.Column(db.String(15), nullable=False)
+    owner_email = db.Column(db.String(255))
     vehicle_type = db.Column(db.String(50))
     district = db.Column(db.String(80))
 
@@ -51,16 +52,17 @@ class Vehicle(db.Model):
 
     puc_expiry = db.Column(db.Date)
     fitness_expiry = db.Column(db.Date)
+    permit_from = db.Column(db.Date)
     permit_expiry = db.Column(db.Date)
+    permit_auth_no = db.Column(db.String(50))
+    permit_address = db.Column(db.String(255))
     tax_from = db.Column(db.Date)
     tax_expiry = db.Column(db.Date)
     tax_mode = db.Column(db.String(30))
     tax_amount = db.Column(db.Float, default=0)
     insurance_expiry = db.Column(db.Date)
     national_permit_expiry = db.Column(db.Date)
-    national_permit_number = db.Column(db.String(50))
     state_permit_expiry = db.Column(db.Date)
-    address = db.Column(db.Text)
 
     pollution_certificate_number = db.Column(db.String(50))
     insurance_company = db.Column(db.String(120))
@@ -113,7 +115,7 @@ class Vehicle(db.Model):
         for p in priority:
             if p in statuses:
                 return p
-        return "status-gray"
+        return "status-green"
 
     def to_dict(self):
         return {
@@ -123,23 +125,24 @@ class Vehicle(db.Model):
             "chassis_number": self.chassis_number,
             "engine_number": self.engine_number,
             "owner_name": self.owner_name,
-            "owner_email": self.owner_email or "",
             "mobile_number": self.mobile_number,
+            "owner_email": self.owner_email or "",
             "vehicle_type": self.vehicle_type,
             "district": self.district,
             "registration_date": self.registration_date.isoformat() if self.registration_date else "",
             "puc_expiry": self.puc_expiry.isoformat() if self.puc_expiry else "",
             "fitness_expiry": self.fitness_expiry.isoformat() if self.fitness_expiry else "",
             "permit_expiry": self.permit_expiry.isoformat() if self.permit_expiry else "",
+            "permit_from": self.permit_from.isoformat() if self.permit_from else "",
+            "permit_auth_no": self.permit_auth_no or "",
+            "permit_address": self.permit_address or "",
             "tax_from": self.tax_from.isoformat() if self.tax_from else "",
             "tax_expiry": self.tax_expiry.isoformat() if self.tax_expiry else "",
             "tax_mode": self.tax_mode or "",
             "tax_amount": self.tax_amount or 0,
             "insurance_expiry": self.insurance_expiry.isoformat() if self.insurance_expiry else "",
             "national_permit_expiry": self.national_permit_expiry.isoformat() if self.national_permit_expiry else "",
-            "national_permit_number": self.national_permit_number or "",
             "state_permit_expiry": self.state_permit_expiry.isoformat() if self.state_permit_expiry else "",
-            "address": self.address or "",
             "pollution_certificate_number": self.pollution_certificate_number or "",
             "insurance_company": self.insurance_company or "",
             "policy_number": self.policy_number or "",
@@ -183,60 +186,42 @@ class ReminderLog(db.Model):
     __tablename__ = "reminder_logs"
 
     id = db.Column(db.Integer, primary_key=True)
-    vehicle_id = db.Column(db.Integer, db.ForeignKey("vehicles.id"), nullable=False)
+    vehicle_id = db.Column(db.Integer, db.ForeignKey("vehicles.id"), nullable=True)
     document_type = db.Column(db.String(30), nullable=False)
     recipient_email = db.Column(db.String(120), nullable=False)
     status = db.Column(db.String(20), default="sent")
     error_message = db.Column(db.Text)
     sent_at = db.Column(db.DateTime, default=datetime.utcnow)
+    kind = db.Column(db.String(20), default="reminder")
 
     vehicle = db.relationship("Vehicle", backref=db.backref("reminder_logs", lazy="dynamic"))
 
 
-class ScanHistory(db.Model):
-    __tablename__ = "scan_history"
+class DocumentScan(db.Model):
+    __tablename__ = "document_scans"
 
     id = db.Column(db.Integer, primary_key=True)
-    vehicle_number = db.Column(db.String(20))
-    chassis_number = db.Column(db.String(50))
-    engine_number = db.Column(db.String(50))
-    owner_name = db.Column(db.String(120))
-    address = db.Column(db.Text)
-    vehicle_type = db.Column(db.String(50))
-    registration_date = db.Column(db.Date)
-    puc_expiry = db.Column(db.Date)
-    fitness_expiry = db.Column(db.Date)
-    permit_expiry = db.Column(db.Date)
-    national_permit_number = db.Column(db.String(50))
-    tax_from = db.Column(db.Date)
-    tax_expiry = db.Column(db.Date)
-    tax_mode = db.Column(db.String(30))
-    insurance_expiry = db.Column(db.Date)
-    insurance_company = db.Column(db.String(120))
-    policy_number = db.Column(db.String(50))
-    document_type = db.Column(db.String(30))
+    file_name = db.Column(db.String(255))
+    document_type = db.Column(db.String(50))
+    parsed_data = db.Column(db.Text)          # JSON string of extracted fields
+    ocr_text = db.Column(db.Text)
+    vehicle_id = db.Column(db.Integer, db.ForeignKey("vehicles.id"), nullable=True)
     scanned_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    vehicle = db.relationship("Vehicle", backref=db.backref("document_scans", lazy="dynamic"))
+
+    def data_dict(self):
+        try:
+            return json.loads(self.parsed_data or "{}")
+        except Exception:
+            return {}
 
     def to_dict(self):
         return {
             "id": self.id,
-            "vehicle_number": self.vehicle_number or "",
-            "chassis_number": self.chassis_number or "",
-            "engine_number": self.engine_number or "",
-            "owner_name": self.owner_name or "",
-            "address": self.address or "",
-            "vehicle_type": self.vehicle_type or "",
-            "registration_date": self.registration_date.isoformat() if self.registration_date else "",
-            "puc_expiry": self.puc_expiry.isoformat() if self.puc_expiry else "",
-            "fitness_expiry": self.fitness_expiry.isoformat() if self.fitness_expiry else "",
-            "permit_expiry": self.permit_expiry.isoformat() if self.permit_expiry else "",
-            "national_permit_number": self.national_permit_number or "",
-            "tax_from": self.tax_from.isoformat() if self.tax_from else "",
-            "tax_expiry": self.tax_expiry.isoformat() if self.tax_expiry else "",
-            "tax_mode": self.tax_mode or "",
-            "insurance_expiry": self.insurance_expiry.isoformat() if self.insurance_expiry else "",
-            "insurance_company": self.insurance_company or "",
-            "policy_number": self.policy_number or "",
+            "file_name": self.file_name or "",
             "document_type": self.document_type or "",
+            "data": self.data_dict(),
+            "vehicle_id": self.vehicle_id,
             "scanned_at": self.scanned_at.strftime("%d %b %Y, %I:%M %p") if self.scanned_at else "",
         }

@@ -3,26 +3,26 @@
 {% block page_title %}AI Document Scanner{% endblock %}
 
 {% block content %}
-{% if not ai_enabled %}
+{% if not ollama_running %}
 <div class="panel" style="text-align:center; padding:60px 20px;">
   <i class="fa-solid fa-file-circle-xmark" style="font-size:3rem; color:var(--text-muted); margin-bottom:16px;"></i>
   <h3 style="color:var(--text);">API Key Not Configured</h3>
-  <p style="color:var(--text-muted); margin:10px 0 20px;">Set your OpenRouter or Google Gemini API key to use the document scanner.</p>
-  <code style="background:var(--bg); padding:8px 16px; border-radius:8px; color:var(--green);">set VCMS_AI_PROVIDER=gemini</code>
-  <p style="color:var(--text-muted); margin-top:12px; font-size:0.85rem;">Get a free Gemini key at <a href="https://aistudio.google.com/app/apikey" target="_blank">aistudio.google.com/apikey</a> or an OpenRouter key at <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a></p>
+  <p style="color:var(--text-muted); margin:10px 0 20px;">Set your AI API key (OpenRouter or Google Gemini) in Settings to use the document scanner.</p>
+  <a href="{{ url_for('settings') }}" class="btn btn-primary"><i class="fa-solid fa-gear"></i> Open Settings</a>
+  <p style="color:var(--text-muted); margin-top:12px; font-size:0.85rem;">Free keys: <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a> &middot; <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a></p>
 </div>
 {% else %}
 
 {% if not parsed_data %}
 <div class="panel">
-  <h3 style="color:var(--text); margin:0 0 16px;"><i class="fa-solid fa-cloud-arrow-up" style="color:var(--blue);"></i> Upload Document</h3>
-  <p style="color:var(--text-muted); margin-bottom:16px;">Upload an image or PDF of RC, Insurance, PUC, or Fitness certificate. AI will extract vehicle data automatically.</p>
+  <h3 style="color:var(--text); margin:0 0 16px;"><i class="fa-solid fa-cloud-arrow-up" style="color:var(--blue);"></i> Upload Document Image</h3>
+  <p style="color:var(--text-muted); margin-bottom:16px;">Upload an image of RC, Insurance, PUC, or Fitness certificate. AI will extract vehicle data automatically.</p>
   <form method="POST" enctype="multipart/form-data" class="upload-zone" id="uploadForm">
     <div class="upload-area" id="dropZone" onclick="document.getElementById('fileInput').click()">
       <i class="fa-solid fa-image" style="font-size:2.5rem; color:var(--text-muted); margin-bottom:12px;"></i>
       <p style="color:var(--text-muted); margin:0;">Click or drag an image here</p>
-      <p style="color:var(--text-muted); font-size:0.8rem; margin:6px 0 0;">Supports: JPG, PNG, BMP, TIFF, PDF</p>
-      <input type="file" name="document" id="fileInput" accept="image/*,.pdf,application/pdf" style="display:none;" required>
+      <p style="color:var(--text-muted); font-size:0.8rem; margin:6px 0 0;">Supports: JPG, PNG, BMP, TIFF</p>
+      <input type="file" name="document" id="fileInput" accept="image/*" style="display:none;" required>
     </div>
     <div id="preview" style="display:none; margin-top:16px;">
       <img id="previewImg" style="max-width:100%; max-height:300px; border-radius:8px; border:1px solid var(--border);">
@@ -35,44 +35,44 @@
   </form>
 </div>
 
-{% if ocr_text %}
+{% if recent_scans %}
 <div class="panel" style="margin-top:18px;">
-  <h3 style="color:var(--text); margin:0 0 16px;"><i class="fa-solid fa-file-lines" style="color:var(--blue);"></i> Raw Extracted Text</h3>
-  <p style="color:var(--text-muted); margin:0 0 8px; font-size:0.82rem;">Text read from the uploaded document. Use this to check if OCR picked up the right details.</p>
-  <pre style="background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px; color:var(--text-muted); font-size:0.82rem; max-height:300px; overflow-y:auto; white-space:pre-wrap;">{{ ocr_text }}</pre>
-</div>
-{% endif %}
-
-{% if last_scans %}
-<div class="panel" style="margin-top:18px;">
-  <h3 style="color:var(--text); margin:0 0 16px;"><i class="fa-solid fa-clock-rotate-left" style="color:var(--blue);"></i> Recent Scans</h3>
-  <div style="overflow-x:auto;">
-    <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px;">
+    <h3 style="color:var(--text); margin:0;"><i class="fa-solid fa-clock-rotate-left" style="color:var(--blue);"></i> Recent Scans</h3>
+    <span class="badge-status status-gray">Last {{ recent_scans|length }}</span>
+  </div>
+  <div class="table-wrap">
+    <table class="table-main" style="min-width:720px;">
       <thead>
-        <tr style="border-bottom:2px solid var(--border);">
-          <th style="text-align:left; padding:8px 10px; color:var(--text);">Vehicle No</th>
-          <th style="text-align:left; padding:8px 10px; color:var(--text);">Owner</th>
-          <th style="text-align:left; padding:8px 10px; color:var(--text);">Document</th>
-          <th style="text-align:left; padding:8px 10px; color:var(--text);">Scanned At</th>
-          <th style="text-align:center; padding:8px 10px; color:var(--text);">Actions</th>
+        <tr>
+          <th>Scanned</th>
+          <th>Vehicle</th>
+          <th>Owner</th>
+          <th>Document</th>
+          <th>Source File</th>
+          <th>Status</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
-        {% for scan in last_scans %}
-        <tr style="border-bottom:1px solid var(--border);">
-          <td style="padding:8px 10px; color:var(--text); font-weight:500;">{{ scan.vehicle_number or '-' }}</td>
-          <td style="padding:8px 10px; color:var(--text-muted);">{{ scan.owner_name or '-' }}</td>
-          <td style="padding:8px 10px; color:var(--text-muted);">{{ scan.document_type or '-' }}</td>
-          <td style="padding:8px 10px; color:var(--text-muted);">{{ scan.scanned_at }}</td>
-          <td style="padding:8px 10px; text-align:center; white-space:nowrap;">
-            <a href="{{ url_for('ai_scan_view', scan_id=scan.id) }}" class="btn btn-sm btn-outline-secondary" style="font-size:0.78rem; padding:3px 10px; text-decoration:none;" title="View scan details">
-              <i class="fa-solid fa-eye"></i> View
-            </a>
-            <form method="POST" action="{{ url_for('ai_scan_edit', scan_id=scan.id) }}" style="display:inline;">
-              <button type="submit" class="btn btn-sm btn-outline-primary" style="font-size:0.78rem; padding:3px 10px;" title="Edit this scan data again">
-                <i class="fa-solid fa-pen"></i> Edit
-              </button>
-            </form>
+        {% for s in recent_scans %}
+        {% set d = s.data_dict() %}
+        <tr>
+          <td>{{ s.scanned_at.strftime('%d %b %Y, %I:%M %p') if s.scanned_at else '—' }}</td>
+          <td style="font-weight:600; color:var(--text);">{{ d.get('vehicle_number') or '—' }}</td>
+          <td>{{ d.get('owner_name') or '—' }}</td>
+          <td>{{ s.document_type or d.get('document_type') or '—' }}</td>
+          <td class="text-muted" style="max-width:150px; overflow:hidden; text-overflow:ellipsis;" title="{{ s.file_name or '' }}">{{ s.file_name or '—' }}</td>
+          <td>
+            {% if s.vehicle %}
+            <span class="badge-status status-green"><i class="fa-solid fa-check"></i> Added</span>
+            {% else %}
+            <span class="badge-status status-yellow">Not added</span>
+            {% endif %}
+          </td>
+          <td class="actions-cell">
+            <a href="{{ url_for('ai_parse_view_scan', scan_id=s.id) }}" title="View scan"><i class="fa-solid fa-eye"></i></a>
+            <a href="{{ url_for('ai_parse_edit_scan', scan_id=s.id) }}" title="Edit scan"><i class="fa-solid fa-pen-to-square"></i></a>
           </td>
         </tr>
         {% endfor %}
@@ -81,17 +81,41 @@
   </div>
 </div>
 {% endif %}
-
 {% else %}
 
+{% if view_scan %}
 <div class="panel" style="margin-bottom:18px;">
-  <h3 style="color:var(--text); margin:0 0 6px;"><i class="fa-solid fa-circle-check" style="color:var(--green);"></i> Document Scanned Successfully</h3>
-  <p style="color:var(--text-muted); margin:0;">Review the extracted data below, make corrections if needed, then add the vehicle.</p>
+  <h3 style="color:var(--text); margin:0 0 6px;"><i class="fa-solid fa-eye" style="color:var(--blue);"></i> Scan Details</h3>
+  <p style="color:var(--text-muted); margin:0;">Read-only view of the extracted data. Choose <b>Edit</b> to correct fields and add or update the vehicle.</p>
+  <p style="color:var(--text-muted); margin:8px 0 0; font-size:0.85rem;">
+    Scanned: <strong>{{ view_scan.scanned_at.strftime('%d %b %Y, %I:%M %p') if view_scan.scanned_at else '—' }}</strong>
+    &nbsp;·&nbsp; File: <strong>{{ view_scan.file_name or '—' }}</strong>
+    {% if view_scan.document_type %}&nbsp;·&nbsp; Type: <strong>{{ view_scan.document_type }}</strong>{% endif %}
+  </p>
 </div>
+{% else %}
+<div class="panel" style="margin-bottom:18px;">
+  <h3 style="color:var(--text); margin:0 0 6px;">
+    {% if edit_scan %}
+    <i class="fa-solid fa-pen-to-square" style="color:var(--yellow);"></i> Edit Scanned Data
+    {% else %}
+    <i class="fa-solid fa-circle-check" style="color:var(--green);"></i> Document Scanned Successfully
+    {% endif %}
+  </h3>
+  <p style="color:var(--text-muted); margin:0;">
+    {% if edit_scan %}
+    Correct any mistakes below, then add or update the vehicle. Changes are applied when you save.
+    {% else %}
+    Review the extracted data below, make corrections if needed, then add the vehicle.
+    {% endif %}
+  </p>
+</div>
+{% endif %}
 
 {% if existing_vehicle %}
 <div style="background:var(--warning-bg); border:1px solid var(--yellow); border-radius:10px; padding:16px; margin-bottom:18px;">
   <h4 style="color:var(--yellow); margin:0 0 8px;"><i class="fa-solid fa-triangle-exclamation"></i> Vehicle Already Exists</h4>
+  <p style="color:var(--text); margin:0 0 8px;">This vehicle is already in the database. Existing data will be preserved for blank fields — only new values will be updated.</p>
   <div style="display:flex; gap:16px; flex-wrap:wrap; font-size:0.85rem;">
     <span style="color:var(--text-muted);">Vehicle: <strong style="color:var(--text);">{{ existing_vehicle.vehicle_number }}</strong></span>
     <span style="color:var(--text-muted);">Chassis: <strong style="color:var(--text);">{{ existing_vehicle.chassis_number }}</strong></span>
@@ -108,65 +132,44 @@
 </details>
 {% endif %}
 
-<form method="POST" action="{{ url_for('ai_parse_add_vehicle') }}">
-{% if existing_vehicle and comparison %}
-<div class="panel" style="margin-bottom:18px;">
-  <h4 style="color:var(--text); margin:0 0 12px;"><i class="fa-solid fa-code-compare" style="color:var(--blue);"></i> Field Comparison</h4>
-  <p style="color:var(--text-muted); margin:0 0 16px; font-size:0.85rem;">
-    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--green); vertical-align:middle; margin-right:4px;"></span> Auto-fill (empty in DB)
-    &nbsp;&nbsp;
-    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--yellow); vertical-align:middle; margin-right:4px;"></span> Changed — accept to update
-    &nbsp;&nbsp;
-    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--text-muted); vertical-align:middle; margin-right:4px;"></span> Same — no action
-  </p>
-
-  <div class="compare-table-wrap" style="overflow-x:auto;">
-    <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
-      <thead>
-        <tr style="border-bottom:2px solid var(--border);">
-          <th style="text-align:left; padding:8px 10px; color:var(--text);">Field</th>
-          <th style="text-align:left; padding:8px 10px; color:var(--text);">Existing (DB)</th>
-          <th style="text-align:left; padding:8px 10px; color:var(--text);">Scanned</th>
-          <th style="text-align:center; padding:8px 10px; color:var(--text);">Status</th>
-          <th style="text-align:center; padding:8px 10px; color:var(--text);">Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for item in comparison %}
-        <tr style="border-bottom:1px solid var(--border); {% if item.status == 'same' %}opacity:0.55;{% endif %}">
-          <td style="padding:8px 10px; color:var(--text); font-weight:500;">{{ item.label }}</td>
-          <td style="padding:8px 10px; color:var(--text-muted);">{{ item.existing_value }}</td>
-          <td style="padding:8px 10px; color:var(--text);">{{ item.scanned_value }}</td>
-          <td style="padding:8px 10px; text-align:center;">
-            {% if item.status == 'empty' %}
-              <span style="background:rgba(34,197,94,0.15); color:var(--green); padding:3px 10px; border-radius:12px; font-size:0.78rem; font-weight:500;">Auto-fill</span>
-            {% elif item.status == 'changed' %}
-              <span style="background:rgba(234,179,8,0.15); color:var(--yellow); padding:3px 10px; border-radius:12px; font-size:0.78rem; font-weight:500;">Changed</span>
-            {% else %}
-              <span style="background:rgba(156,163,175,0.15); color:var(--text-muted); padding:3px 10px; border-radius:12px; font-size:0.78rem; font-weight:500;">Same</span>
-            {% endif %}
-          </td>
-          <td style="padding:8px 10px; text-align:center;">
-            {% if item.status == 'empty' %}
-              <input type="checkbox" checked disabled style="accent-color:var(--green); cursor:not-allowed;" title="Auto-fill">
-            {% elif item.status == 'changed' %}
-              <input type="checkbox" name="accepted_fields" value="{{ item.field }}" class="accept-check" style="accent-color:var(--yellow); cursor:pointer;" title="Accept this update">
-            {% else %}
-              <span style="color:var(--text-muted); font-size:0.8rem;">—</span>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+{% if view_scan %}
+<div class="detail-card">
+  <h4 style="color:var(--text); margin:0 0 16px;">Extracted Vehicle Information</h4>
+  {% set d = parsed_data %}
+  <div class="detail-grid">
+    <div><span class="detail-label">Vehicle Number</span><strong style="color:var(--text);">{{ d.get('vehicle_number') or '—' }}</strong></div>
+    <div><span class="detail-label">Chassis Number</span><strong style="color:var(--text);">{{ d.get('chassis_number') or '—' }}</strong></div>
+    <div><span class="detail-label">Engine Number</span><strong style="color:var(--text);">{{ d.get('engine_number') or '—' }}</strong></div>
+    <div><span class="detail-label">Owner Name</span><strong style="color:var(--text);">{{ d.get('owner_name') or '—' }}</strong></div>
+    <div><span class="detail-label">Vehicle Type</span><strong style="color:var(--text);">{{ d.get('vehicle_type') or '—' }}</strong></div>
+    <div><span class="detail-label">Registration Date</span><strong style="color:var(--text);">{{ d.get('registration_date') or '—' }}</strong></div>
+    <div><span class="detail-label">PUC Expiry</span><strong style="color:var(--text);">{{ d.get('puc_expiry') or '—' }}</strong></div>
+    <div><span class="detail-label">Fitness Expiry</span><strong style="color:var(--text);">{{ d.get('fitness_expiry') or '—' }}</strong></div>
+    <div><span class="detail-label">Permit Expiry</span><strong style="color:var(--text);">{{ d.get('permit_expiry') or '—' }}</strong></div>
+    <div><span class="detail-label">Permit From</span><strong style="color:var(--text);">{{ d.get('permit_from') or '—' }}</strong></div>
+    <div><span class="detail-label">Permit Auth No.</span><strong style="color:var(--text);">{{ d.get('permit_auth_no') or '—' }}</strong></div>
+    <div><span class="detail-label">Address</span><strong style="color:var(--text);">{{ d.get('permit_address') or '—' }}</strong></div>
+    <div><span class="detail-label">Insurance Expiry</span><strong style="color:var(--text);">{{ d.get('insurance_expiry') or '—' }}</strong></div>
+    <div><span class="detail-label">Insurance Company</span><strong style="color:var(--text);">{{ d.get('insurance_company') or '—' }}</strong></div>
+    <div><span class="detail-label">Policy Number</span><strong style="color:var(--text);">{{ d.get('policy_number') or '—' }}</strong></div>
+    <div><span class="detail-label">Tax Period From</span><strong style="color:var(--text);">{{ d.get('tax_from') or '—' }}</strong></div>
+    <div><span class="detail-label">Tax Valid Until</span><strong style="color:var(--text);">{{ d.get('tax_expiry') or '—' }}</strong></div>
+    <div><span class="detail-label">Tax Mode</span><strong style="color:var(--text);">{{ d.get('tax_mode') or '—' }}</strong></div>
+    <div><span class="detail-label">Tax Amount</span><strong style="color:var(--text);">{{ d.get('tax_amount') if d.get('tax_amount') not in [none, '', 0] else '—' }}</strong></div>
+    <div><span class="detail-label">Document Type</span><strong style="color:var(--text);">{{ view_scan.document_type or d.get('document_type') or '—' }}</strong></div>
   </div>
-
-  <div style="margin-top:12px; font-size:0.82rem; color:var(--text-muted);">
-    <i class="fa-solid fa-info-circle"></i> Empty fields will be auto-filled. Check the boxes above for changed fields you want to update, then click <strong>Apply Updates</strong>.
+  <div class="form-actions">
+    <a href="{{ url_for('ai_parse_edit_scan', scan_id=view_scan.id) }}" class="btn btn-primary">
+      <i class="fa-solid fa-pen-to-square"></i> Edit This Scan
+    </a>
+    <a href="{{ url_for('ai_parse_document') }}" class="btn btn-outline-secondary">
+      <i class="fa-solid fa-camera"></i> Scan Another
+    </a>
   </div>
 </div>
-{% endif %}
-
+{% else %}
+<form method="POST" action="{{ url_for('ai_parse_add_vehicle') }}">
+  <input type="hidden" name="scan_id" value="{{ current_scan_id or '' }}">
   <div class="detail-card">
     <h4 style="color:var(--text); margin:0 0 16px;">Extracted Vehicle Information</h4>
     <div class="form-grid">
@@ -187,16 +190,8 @@
         <input type="text" name="owner_name" class="form-control" value="{{ parsed_data.owner_name or '' }}">
       </div>
       <div class="form-group">
-        <label>Address</label>
-        <textarea name="address" class="form-control" rows="2" placeholder="Owner address">{{ parsed_data.address or '' }}</textarea>
-      </div>
-      <div class="form-group">
         <label>Mobile Number</label>
         <input type="text" name="mobile_number" class="form-control" value="">
-      </div>
-      <div class="form-group">
-        <label>Owner Email</label>
-        <input type="email" name="owner_email" class="form-control" value="" placeholder="For email reminders">
       </div>
       <div class="form-group">
         <label>Vehicle Type</label>
@@ -219,20 +214,16 @@
         <input type="date" name="permit_expiry" class="form-control" value="{{ parsed_data.permit_expiry or '' }}">
       </div>
       <div class="form-group">
-        <label>NP Auth No (National Permit)</label>
-        <input type="text" name="national_permit_number" class="form-control" value="{{ parsed_data.national_permit_number or '' }}" placeholder="NP Auth No">
+        <label>Permit From</label>
+        <input type="date" name="permit_from" class="form-control" value="{{ parsed_data.permit_from or '' }}">
       </div>
       <div class="form-group">
-        <label>Tax Mode</label>
-        <input type="text" name="tax_mode" class="form-control" value="{{ parsed_data.tax_mode or '' }}" placeholder="e.g. Quarterly, Annual, Life Tax">
+        <label>Permit Auth No.</label>
+        <input type="text" name="permit_auth_no" class="form-control" value="{{ parsed_data.permit_auth_no or '' }}">
       </div>
       <div class="form-group">
-        <label>Tax From</label>
-        <input type="date" name="tax_from" class="form-control" value="{{ parsed_data.tax_from or '' }}">
-      </div>
-      <div class="form-group">
-        <label>Tax Expiry</label>
-        <input type="date" name="tax_expiry" class="form-control" value="{{ parsed_data.tax_expiry or '' }}">
+        <label>Address</label>
+        <input type="text" name="permit_address" class="form-control" value="{{ parsed_data.permit_address or '' }}">
       </div>
       <div class="form-group">
         <label>Insurance Expiry</label>
@@ -246,19 +237,40 @@
         <label>Policy Number</label>
         <input type="text" name="policy_number" class="form-control" value="{{ parsed_data.policy_number or '' }}">
       </div>
+      <div class="form-group">
+        <label>Tax Period From</label>
+        <input type="date" name="tax_from" class="form-control" value="{{ parsed_data.tax_from or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Tax Valid Until</label>
+        <input type="date" name="tax_expiry" class="form-control" value="{{ parsed_data.tax_expiry or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Tax Mode</label>
+        {% set pm = (parsed_data.tax_mode or '') | string %}
+        <select name="tax_mode" class="form-select">
+          <option value="">Select mode</option>
+          {% for m in ['Monthly (M)', 'Quarterly (Q)', 'Half-Yearly (HY)', 'Yearly (Y)', 'Lifetime (LTT)'] %}
+          <option value="{{ m }}" {{ 'selected' if pm == m or pm.split(' (')[0] == m.split(' (')[0] }}>{{ m }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Tax Amount</label>
+        <input type="number" step="0.01" name="tax_amount" class="form-control" value="{{ parsed_data.tax_amount if parsed_data.tax_amount else '' }}">
+      </div>
     </div>
     <div class="form-actions">
       {% if existing_vehicle %}
-      <button type="submit" class="btn btn-primary" id="submitBtn">
-        {% if comparison %}<i class="fa-solid fa-check-double"></i> Apply Updates{% else %}<i class="fa-solid fa-pen-to-square"></i> Update Vehicle{% endif %}
-      </button>
+      <button type="submit" class="btn btn-primary"><i class="fa-solid fa-pen-to-square"></i> Update Vehicle</button>
       {% else %}
-      <button type="submit" class="btn btn-primary" id="submitBtn"><i class="fa-solid fa-plus"></i> Add Vehicle</button>
+      <button type="submit" class="btn btn-primary"><i class="fa-solid fa-plus"></i> Add Vehicle</button>
       {% endif %}
       <a href="{{ url_for('ai_parse_document') }}" class="btn btn-outline-secondary"><i class="fa-solid fa-arrow-left"></i> Scan Another</a>
     </div>
   </div>
 </form>
+{% endif %}
 
 {% endif %}
 {% endif %}
@@ -295,19 +307,8 @@
 
   function showPreview(file) {
     if (!file) return;
-    submitBtn.disabled = false;
-    const isPdf = (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'));
-    if (isPdf) {
-      previewImg.style.display = 'none';
-      preview.innerHTML = '<i class="fa-solid fa-file-pdf" style="font-size:2rem; color:var(--red, #ef4444); margin-bottom:8px;"></i>' +
-                          '<p style="margin:0; color:var(--text); font-weight:500;">' + file.name + '</p>' +
-                          '<p style="margin:4px 0 0; color:var(--text-muted); font-size:0.8rem;">PDF document ready to scan</p>';
-      preview.style.display = 'block';
-      return;
-    }
-    previewImg.style.display = '';
     const reader = new FileReader();
-    reader.onload = e => { previewImg.src = e.target.result; preview.style.display = 'block'; };
+    reader.onload = e => { previewImg.src = e.target.result; preview.style.display = 'block'; submitBtn.disabled = false; };
     reader.readAsDataURL(file);
   }
 </script>

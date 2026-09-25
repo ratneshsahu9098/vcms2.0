@@ -1,0 +1,306 @@
+/* ==========================================================================
+   VCMS motion layer — entrances, micro-interactions, scroll reveals.
+   Loaded after style.css. Everything degrades gracefully and respects
+   prefers-reduced-motion (see the media query at the bottom).
+   ========================================================================== */
+
+:root {
+  --ease-out: cubic-bezier(0.22, 0.9, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --speed: 0.22s;
+  --speed-slow: 0.45s;
+}
+
+html { scroll-behavior: smooth; }
+
+/* ---------- Shell entrance ---------- */
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+.content { animation: page-in var(--speed-slow) var(--ease-out) both; }
+
+@keyframes sidebar-in {
+  from { opacity: 0; transform: translateX(-18px); }
+  to { opacity: 1; transform: none; }
+}
+.sidebar { animation: sidebar-in 0.4s var(--ease-out) both; }
+
+@keyframes topbar-in {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: none; }
+}
+.topbar {
+  animation: topbar-in 0.4s var(--ease-out) both;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* ---------- Sidebar navigation ---------- */
+.sidebar-nav a {
+  position: relative;
+  transition:
+    background var(--speed) ease,
+    color var(--speed) ease,
+    transform var(--speed) var(--ease-out);
+}
+.sidebar-nav a:hover { transform: translateX(5px); text-decoration: none; }
+.sidebar-nav a::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 20%;
+  height: 60%;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--blue);
+  transform: scaleY(0);
+  transform-origin: center;
+  transition: transform 0.3s var(--ease-spring);
+}
+.sidebar-nav a.active::before { transform: scaleY(1); }
+.sidebar-nav a i { transition: transform 0.3s var(--ease-spring), color var(--speed); display: inline-block; }
+.sidebar-nav a:hover i { transform: scale(1.18); }
+.sidebar-nav a.active i { transform: scale(1.05); }
+.sidebar-divider { transition: background var(--speed) ease; }
+.sidebar-divider:hover { background: var(--text-muted); }
+
+.sidebar-brand i { display: inline-block; transition: transform 0.35s var(--ease-spring); }
+.sidebar-brand:hover i { transform: rotate(-10deg) scale(1.12); }
+
+.sidebar-footer a { transition: color var(--speed) ease, transform var(--speed) var(--ease-out); }
+.sidebar-footer a:hover { transform: translateX(3px); text-decoration: none; }
+
+/* ---------- Topbar controls ---------- */
+.btn-back, .theme-toggle, .sidebar-toggle {
+  transition:
+    color var(--speed) ease,
+    border-color var(--speed) ease,
+    background var(--speed) ease,
+    transform var(--speed) var(--ease-out);
+}
+.btn-back:hover, .theme-toggle:hover {
+  transform: translateY(-1px);
+  background: var(--charcoal-light);
+}
+.btn-back:active, .theme-toggle:active { transform: scale(0.94); }
+
+.page-title { transition: opacity 0.3s ease; }
+
+/* ---------- Buttons ---------- */
+.btn {
+  transition:
+    transform var(--speed) var(--ease-out),
+    box-shadow var(--speed) ease,
+    background var(--speed) ease,
+    border-color var(--speed) ease,
+    color var(--speed) ease,
+    filter var(--speed) ease;
+}
+.btn:hover { transform: translateY(-2px); box-shadow: 0 6px 16px var(--shadow); text-decoration: none; }
+.btn:active { transform: translateY(0) scale(0.97); box-shadow: none; }
+
+/* ---------- Cards & panels ---------- */
+.stat-card, .doc-card, .panel, .detail-card, .form-card,
+.import-form, .export-form, .table-wrap, .tax-quick-pay, .auth-card {
+  transition:
+    transform var(--speed) var(--ease-out),
+    box-shadow var(--speed) ease,
+    border-color var(--speed) ease;
+}
+.stat-card:hover, .doc-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 26px var(--shadow);
+  border-color: color-mix(in srgb, var(--blue) 30%, var(--border));
+}
+.panel:hover, .detail-card:hover, .form-card:hover,
+.import-form:hover, .export-form:hover, .table-wrap:hover {
+  border-color: color-mix(in srgb, var(--blue) 25%, var(--border));
+}
+.stat-icon { transition: transform 0.35s var(--ease-spring); display: flex; }
+.stat-card:hover .stat-icon { transform: scale(1.1) rotate(-5deg); }
+.stat-link { transition: transform var(--speed) var(--ease-out), box-shadow var(--speed) ease, border-color var(--speed) ease; }
+.stat-value { transition: opacity 0.3s ease; }
+
+.doc-status-item {
+  transition:
+    transform var(--speed) var(--ease-out),
+    box-shadow var(--speed) ease,
+    border-color var(--speed) ease;
+}
+.doc-status-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px var(--shadow);
+  border-color: color-mix(in srgb, var(--blue) 28%, var(--border));
+}
+
+/* ---------- Tables ---------- */
+.table-main tbody tr { transition: background var(--speed) ease; }
+.table-main th { transition: color var(--speed) ease; }
+.table-plain td { transition: color var(--speed) ease; }
+.table-plain tr:hover td { color: var(--text); }
+
+/* ---------- Flash messages ---------- */
+@keyframes flash-in {
+  from { opacity: 0; transform: translateX(30px); }
+  to { opacity: 1; transform: none; }
+}
+/* fill: backwards only, so the auto-dismiss JS can still fade it out */
+.flash { animation: flash-in 0.5s var(--ease-spring) backwards; }
+.flash i { animation: none; }
+
+/* ---------- Badges ---------- */
+@keyframes badge-pop {
+  from { opacity: 0; transform: scale(0.7); }
+  60% { transform: scale(1.06); }
+  to { opacity: 1; transform: none; }
+}
+.badge, .badge-status { animation: badge-pop 0.45s var(--ease-spring) both; animation-delay: 0.18s; }
+
+/* ---------- Forms ---------- */
+.form-control, .form-select, textarea.form-control {
+  transition:
+    border-color var(--speed) ease,
+    box-shadow var(--speed) ease,
+    background var(--speed) ease;
+}
+.form-group label { transition: color var(--speed) ease; }
+.form-group:focus-within label { color: var(--blue); }
+input[type="checkbox"], input[type="radio"] { transition: transform 0.18s var(--ease-spring), accent-color var(--speed) ease; cursor: pointer; }
+input[type="checkbox"]:active, input[type="radio"]:active { transform: scale(0.88); }
+
+/* ---------- Row action icons ---------- */
+.actions-cell a, .actions-cell button, .actions-cell .inline-form button {
+  display: inline-flex;
+  align-items: center;
+  transition: transform 0.25s var(--ease-spring), color var(--speed) ease;
+}
+.actions-cell a:hover, .actions-cell button:hover { transform: translateY(-2px) scale(1.15); }
+.actions-cell a:active, .actions-cell button:active { transform: scale(0.9); }
+
+/* ---------- Tabs & chips ---------- */
+.report-tab, .filter-chip {
+  transition:
+    transform var(--speed) var(--ease-out),
+    background var(--speed) ease,
+    border-color var(--speed) ease,
+    color var(--speed) ease,
+    box-shadow var(--speed) ease;
+}
+.report-tab:hover, .filter-chip:hover { transform: translateY(-2px); }
+.report-tab:active, .filter-chip:active { transform: scale(0.96); }
+.report-tab.active, .filter-chip.active { box-shadow: 0 4px 12px var(--shadow); }
+
+.import-steps .step { transition: background var(--speed) ease, color var(--speed) ease, transform var(--speed) var(--ease-out); }
+.import-steps .step.active { transform: translateY(-1px); }
+
+/* ---------- Expiry urgency: failed reminders pulse (kept subtle elsewhere) ---- */
+@keyframes pulse-red {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.45); }
+  50% { box-shadow: 0 0 0 5px rgba(239, 68, 68, 0); }
+}
+@keyframes pulse-orange {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.45); }
+  50% { box-shadow: 0 0 0 5px rgba(249, 115, 22, 0); }
+}
+.reminder-entry-dot.dot-red { animation: pulse-red 2.4s ease-in-out infinite; }
+.reminder-entry-dot.dot-orange { animation: pulse-orange 2.4s ease-in-out infinite; }
+
+/* ---------- AI chat ---------- */
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+.ai-msg { animation: msg-in 0.4s var(--ease-out) both; }
+.ai-msg-content { transition: border-color var(--speed) ease, background var(--speed) ease; }
+
+/* ---------- Auth / login ---------- */
+@keyframes auth-in {
+  from { opacity: 0; transform: translateY(26px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+.auth-card { animation: auth-in 0.55s var(--ease-spring) both; }
+@keyframes auth-icon {
+  from { opacity: 0; transform: scale(0.3) rotate(-25deg); }
+  60% { transform: scale(1.18) rotate(6deg); }
+  to { opacity: 1; transform: none; }
+}
+.auth-brand i { display: inline-block; animation: auth-icon 0.7s var(--ease-spring) both 0.15s; }
+
+/* ---------- Upload / debug ---------- */
+.upload-area { transition: border-color var(--speed) ease, background var(--speed) ease, box-shadow var(--speed) ease; }
+.upload-area:hover { box-shadow: 0 6px 18px var(--shadow); }
+
+/* ---------- Theme icon ---------- */
+@keyframes icon-spin {
+  from { transform: rotate(0deg) scale(0.5); opacity: 0.2; }
+  to { transform: rotate(360deg) scale(1); opacity: 1; }
+}
+.theme-toggle i { display: inline-block; transition: transform 0.35s var(--ease-spring); }
+.theme-toggle:hover i { transform: rotate(20deg); }
+.theme-toggle i.spin { animation: icon-spin 0.5s var(--ease-spring); }
+
+/* ---------- Scroll reveal (enabled only when html.js-motion) ---------- */
+html.js-motion :is(
+  .stat-card, .doc-card, .panel, .detail-card, .table-wrap,
+  .form-card, .import-form, .export-form,
+  .table-main tbody tr, .reminder-entry
+) {
+  opacity: 0;
+}
+html.js-motion :is(
+  .stat-card, .doc-card, .panel, .detail-card, .table-wrap,
+  .form-card, .import-form, .export-form,
+  .table-main tbody tr, .reminder-entry
+).revealed {
+  opacity: 1;
+  transition:
+    opacity 0.5s var(--ease-out) var(--rev-d, 0ms),
+    transform var(--speed) var(--ease-out),
+    border-color var(--speed) ease,
+    box-shadow var(--speed) ease,
+    background var(--speed) ease;
+}
+
+/* ---------- Cross-page view transitions (Chromium) ---------- */
+@view-transition { navigation: auto; }
+::view-transition-old(root) { animation: vt-out 0.22s ease both; }
+::view-transition-new(root) { animation: vt-in 0.3s var(--ease-out) both; }
+@keyframes vt-out { to { opacity: 0; transform: scale(0.99); } }
+@keyframes vt-in { from { opacity: 0; transform: translateY(8px); } }
+
+/* ---------- Scrollbars, selection, focus ---------- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--gray); background-clip: padding-box; border: 2px solid transparent; }
+html { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+
+::selection { background: color-mix(in srgb, var(--blue) 38%, var(--charcoal)); color: var(--text); }
+
+a:focus-visible, button:focus-visible, [role="button"]:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+/* ---------- Reduced motion: show everything, instantly ---------- */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
+  html.js-motion :is(
+    .stat-card, .doc-card, .panel, .detail-card, .table-wrap,
+    .form-card, .import-form, .export-form,
+    .table-main tbody tr, .reminder-entry
+  ) { opacity: 1 !important; }
+}

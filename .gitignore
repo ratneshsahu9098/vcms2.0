@@ -3,10 +3,8 @@ venv/
 uploads/
 backups/
 exports/
-.env
 settings.json
 client_secret.json
 token.json
 *.db
 *.pyc
-*.log

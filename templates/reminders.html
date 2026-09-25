@@ -1,13 +1,13 @@
 {% extends "layout.html" %}
-{% block title %}Reminder Logs{% endblock %}
-{% block page_title %}Email Reminder Logs{% endblock %}
+{% block title %}Email Logs{% endblock %}
+{% block page_title %}Email Logs{% endblock %}
 
 {% block content %}
 
 <div class="page-header">
   <div>
-    <h2 class="page-title"><i class="fa-solid fa-envelope-circle-check"></i> Email Reminder Logs</h2>
-    <p style="color:var(--text-muted); font-size:0.85rem;">History of all email reminders sent for document expiry alerts.</p>
+    <h2 class="page-title"><i class="fa-solid fa-envelope-circle-check"></i> Email Logs</h2>
+    <p style="color:var(--text-muted); font-size:0.85rem;">Every email sent by VCMS — document reminders, full details reports, and test emails.</p>
   </div>
   <div style="display:flex; gap:8px;">
     <form method="POST" action="{{ url_for('email_bulk_reminders') }}">
@@ -65,18 +65,27 @@
   </div>
 </div>
 
-{% if logs.items %}
 <div class="reminder-filters">
   <span class="filter-label"><i class="fa-solid fa-filter"></i> Filter:</span>
-  <a href="{{ url_for('reminder_logs') }}" class="filter-chip {% if not request.args.get('status') %}active{% endif %}">All</a>
-  <a href="{{ url_for('reminder_logs') }}?status=sent" class="filter-chip {% if request.args.get('status') == 'sent' %}active{% endif %}">
+  <a href="{{ url_for('reminder_logs', status=None, kind=request.args.get('kind') or None) }}" class="filter-chip {% if not request.args.get('status') %}active{% endif %}">All</a>
+  <a href="{{ url_for('reminder_logs', status='sent', kind=request.args.get('kind') or None) }}" class="filter-chip {% if request.args.get('status') == 'sent' %}active{% endif %}">
     <i class="fa-solid fa-check"></i> Sent
   </a>
-  <a href="{{ url_for('reminder_logs') }}?status=failed" class="filter-chip {% if request.args.get('status') == 'failed' %}active{% endif %}">
+  <a href="{{ url_for('reminder_logs', status='failed', kind=request.args.get('kind') or None) }}" class="filter-chip {% if request.args.get('status') == 'failed' %}active{% endif %}">
     <i class="fa-solid fa-xmark"></i> Failed
   </a>
+  <span class="filter-label" style="margin-left:10px;"><i class="fa-solid fa-tags"></i> Type:</span>
+  <a href="{{ url_for('reminder_logs', kind=None, status=request.args.get('status') or None) }}" class="filter-chip {% if not request.args.get('kind') %}active{% endif %}">All Types</a>
+  <a href="{{ url_for('reminder_logs', kind='reminder', status=request.args.get('status') or None) }}" class="filter-chip {% if request.args.get('kind') == 'reminder' %}active{% endif %}">
+    <i class="fa-solid fa-bell"></i> Reminders
+  </a>
+  <a href="{{ url_for('reminder_logs', kind='details', status=request.args.get('status') or None) }}" class="filter-chip {% if request.args.get('kind') == 'details' %}active{% endif %}">
+    <i class="fa-solid fa-file-lines"></i> Details
+  </a>
+  <a href="{{ url_for('reminder_logs', kind='test', status=request.args.get('status') or None) }}" class="filter-chip {% if request.args.get('kind') == 'test' %}active{% endif %}">
+    <i class="fa-solid fa-flask"></i> Tests
+  </a>
 </div>
-{% endif %}
 
 <div class="reminder-timeline">
   {% for log in logs.items %}
@@ -91,10 +100,16 @@
     <div class="reminder-entry-card">
       <div class="reminder-entry-header">
         <div class="reminder-entry-meta">
+          {% if log.vehicle %}
           <a href="{{ url_for('view_vehicle', vehicle_id=log.vehicle.id) }}" class="reminder-vehicle-link">
             <i class="fa-solid fa-truck"></i> {{ log.vehicle.vehicle_number }}
           </a>
           <span class="reminder-owner">{{ log.vehicle.owner_name }}</span>
+          {% elif log.vehicle_id %}
+          <span class="reminder-vehicle-link"><i class="fa-solid fa-truck"></i> Deleted vehicle</span>
+          {% else %}
+          <span class="reminder-vehicle-link"><i class="fa-solid fa-layer-group"></i> {{ 'Test Email' if log.kind == 'test' else 'Bulk / System' }}</span>
+          {% endif %}
         </div>
         <div class="reminder-entry-time">
           <i class="fa-regular fa-clock"></i> {{ log.sent_at.strftime('%d %b %Y, %I:%M %p') }}
@@ -102,8 +117,18 @@
       </div>
       <div class="reminder-entry-body">
         <div class="reminder-detail-row">
+          <span class="reminder-detail-label">Type</span>
+          {% if log.kind == 'details' %}
+            <span class="badge badge-blue"><i class="fa-solid fa-file-lines"></i> Details</span>
+          {% elif log.kind == 'test' %}
+            <span class="badge badge-yellow"><i class="fa-solid fa-flask"></i> Test</span>
+          {% else %}
+            <span class="badge badge-green"><i class="fa-solid fa-bell"></i> Reminder</span>
+          {% endif %}
+        </div>
+        <div class="reminder-detail-row">
           <span class="reminder-detail-label">Document</span>
-          <span class="badge badge-green">{{ log.document_type }}</span>
+          <span class="badge badge-gray">{{ log.document_type }}</span>
         </div>
         <div class="reminder-detail-row">
           <span class="reminder-detail-label">Recipient</span>
@@ -123,6 +148,10 @@
         <div class="reminder-error">
           <i class="fa-solid fa-circle-info"></i> {{ log.error_message }}
         </div>
+        {% elif log.error_message %}
+        <div class="reminder-warning">
+          <i class="fa-solid fa-triangle-exclamation"></i> {{ log.error_message }}
+        </div>
         {% endif %}
       </div>
     </div>
@@ -131,8 +160,9 @@
 </div>
 
 {% if logs.pages > 1 %}
+{% set keep_args = {'status': request.args.get('status') or None, 'kind': request.args.get('kind') or None} %}
 <div class="pagination-bar">
-  <a href="{{ url_for('reminder_logs', page=logs.prev_num) }}" class="btn btn-outline-secondary btn-sm {% if not logs.has_prev %}disabled{% endif %}">
+  <a href="{{ url_for('reminder_logs', page=logs.prev_num, **keep_args) }}" class="btn btn-outline-secondary btn-sm {% if not logs.has_prev %}disabled{% endif %}">
     <i class="fa-solid fa-chevron-left"></i> Previous
   </a>
   <div class="page-numbers">
@@ -140,13 +170,13 @@
       {% if p == logs.page %}
         <span class="page-num active">{{ p }}</span>
       {% elif p <= 3 or p > logs.pages - 3 or (p >= logs.page - 1 and p <= logs.page + 1) %}
-        <a href="{{ url_for('reminder_logs', page=p) }}" class="page-num">{{ p }}</a>
+        <a href="{{ url_for('reminder_logs', page=p, **keep_args) }}" class="page-num">{{ p }}</a>
       {% elif p == 4 or p == logs.pages - 3 %}
         <span class="page-dots">...</span>
       {% endif %}
     {% endfor %}
   </div>
-  <a href="{{ url_for('reminder_logs', page=logs.next_num) }}" class="btn btn-outline-secondary btn-sm {% if not logs.has_next %}disabled{% endif %}">
+  <a href="{{ url_for('reminder_logs', page=logs.next_num, **keep_args) }}" class="btn btn-outline-secondary btn-sm {% if not logs.has_next %}disabled{% endif %}">
     Next <i class="fa-solid fa-chevron-right"></i>
   </a>
 </div>
@@ -157,8 +187,8 @@
   <div class="empty-state-icon">
     <i class="fa-solid fa-envelope-open"></i>
   </div>
-  <h3>No Reminder Logs Yet</h3>
-  <p>Email reminders will appear here once you send them. You can send reminders manually or set up daily automatic reminders.</p>
+  <h3>No Email Logs Yet</h3>
+  <p>Reminders, full details reports, and test emails will appear here once you send them. Configure SMTP in Settings first.</p>
   <div class="empty-state-actions">
     <a href="{{ url_for('settings') }}" class="btn btn-primary"><i class="fa-solid fa-gear"></i> Configure Email</a>
     <a href="{{ url_for('vehicle_list') }}" class="btn btn-outline-secondary"><i class="fa-solid fa-car"></i> View Vehicles</a>
@@ -299,6 +329,14 @@
     display: flex; align-items: flex-start; gap: 8px;
   }
   .reminder-error i { margin-top: 2px; flex-shrink: 0; }
+
+  .reminder-warning {
+    margin-top: 10px; padding: 10px 12px;
+    background: var(--warning-bg); border: 1px solid var(--yellow);
+    border-radius: 8px; font-size: 0.82rem; color: var(--yellow);
+    display: flex; align-items: flex-start; gap: 8px;
+  }
+  .reminder-warning i { margin-top: 2px; flex-shrink: 0; }
 
   .pagination-bar {
     display: flex; align-items: center; justify-content: center;

@@ -1,7 +1,7 @@
-import hashlib
 import json
 import os
 import shutil
+import zipfile
 from datetime import datetime, date
 
 import pandas as pd
@@ -42,6 +42,7 @@ IMPORT_COLUMN_MAP = {
     "owner name": "owner_name",
     "owner email": "owner_email",
     "email": "owner_email",
+    "email address": "owner_email",
     "phone": "mobile_number",
     "mobile number": "mobile_number",
     "vehicle type": "vehicle_type",
@@ -62,15 +63,8 @@ IMPORT_COLUMN_MAP = {
     "insurance expiry": "insurance_expiry",
     "national permit": "national_permit_expiry",
     "national permit expiry": "national_permit_expiry",
-    "np auth no": "national_permit_number",
-    "np auth": "national_permit_number",
-    "national permit number": "national_permit_number",
-    "national permit auth": "national_permit_number",
     "state permit": "state_permit_expiry",
     "state permit expiry": "state_permit_expiry",
-    "address": "address",
-    "owner address": "address",
-    "registered address": "address",
     "pollution certificate number": "pollution_certificate_number",
     "pollution cert no": "pollution_certificate_number",
     "insurance company": "insurance_company",
@@ -89,127 +83,86 @@ def normalize_import_dataframe(df):
     return df.rename(columns=rename)
 
 
-def _file_md5(filepath):
-    h = hashlib.md5()
-    with open(filepath, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            h.update(chunk)
-    return h.hexdigest()
+def create_backup(db_path, backup_folder):
+    """Create a full backup archive: database + settings.json
+    (settings.json carries API keys, AI model, SMTP and reminder config)."""
+    os.makedirs(backup_folder, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y_%m_%d_%H%M%S")
+    backup_name = f"backup_{timestamp}.zip"
+    backup_path = os.path.join(backup_folder, backup_name)
+    with zipfile.ZipFile(backup_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.write(db_path, "vehicles.db")
+        if os.path.exists(SETTINGS_FILE):
+            zf.write(SETTINGS_FILE, "settings.json")
+    return backup_name, backup_path
 
 
-def _load_last_backup_meta(subfolder_path):
-    meta_file = os.path.join(subfolder_path, ".last_backup.json")
-    if os.path.exists(meta_file):
-        with open(meta_file, "r") as f:
-            return json.load(f)
-    return None
+def restore_backup(backup_path, db_path):
+    """Restore from a full .zip backup (database + settings) or a legacy
+    plain .db backup (database only). Returns {"ok", "kind", "message"}."""
+    if not os.path.exists(backup_path):
+        return {"ok": False, "kind": None, "message": "Backup file not found."}
 
-
-def _save_last_backup_meta(subfolder_path, md5, backup_name):
-    meta_file = os.path.join(subfolder_path, ".last_backup.json")
-    with open(meta_file, "w") as f:
-        json.dump({"md5": md5, "backup_name": backup_name, "timestamp": datetime.now().isoformat()}, f)
-
-
-def _is_backup_duplicate(subfolder_path, current_md5):
-    last_meta = _load_last_backup_meta(subfolder_path)
-    if not last_meta:
-        return False, None
-
-    if last_meta.get("md5") == current_md5:
-        last_ts = last_meta.get("timestamp", "")
-        if last_ts:
+    if zipfile.is_zipfile(backup_path):
+        with zipfile.ZipFile(backup_path, "r") as zf:
+            names = zf.namelist()
+            if "vehicles.db" not in names:
+                return {"ok": False, "kind": None,
+                        "message": "Backup archive is missing vehicles.db."}
+            tmp_db = backup_path + ".tmpdb"
             try:
-                last_time = datetime.fromisoformat(last_ts)
-                elapsed = (datetime.now() - last_time).total_seconds()
-                if elapsed < 30:
-                    return True, last_meta.get("backup_name")
-            except (ValueError, TypeError):
-                pass
-        return True, last_meta.get("backup_name")
+                with zf.open("vehicles.db") as src, open(tmp_db, "wb") as out:
+                    shutil.copyfileobj(src, out)
+                shutil.copy2(tmp_db, db_path)
+            finally:
+                if os.path.exists(tmp_db):
+                    os.remove(tmp_db)
+            settings_restored = False
+            if "settings.json" in names:
+                tmp_settings = backup_path + ".tmpsettings"
+                try:
+                    with zf.open("settings.json") as src, open(tmp_settings, "wb") as out:
+                        shutil.copyfileobj(src, out)
+                    shutil.copy2(tmp_settings, SETTINGS_FILE)
+                    settings_restored = True
+                finally:
+                    if os.path.exists(tmp_settings):
+                        os.remove(tmp_settings)
+        if settings_restored:
+            return {"ok": True, "kind": "full",
+                    "message": "Database and settings (API keys, models, SMTP) restored."}
+        return {"ok": True, "kind": "db_only",
+                "message": "Database restored (archive contained no settings.json)."}
 
-    return False, None
-
-
-def create_backup(db_path, backup_folder, subfolder="local"):
-    lock_file = os.path.join(backup_folder, f".{subfolder}.backup.lock")
-
-    if os.path.exists(lock_file):
-        try:
-            with open(lock_file, "r") as f:
-                lock_ts = float(f.read().strip())
-            if (datetime.now().timestamp() - lock_ts) < 10:
-                meta = _load_last_backup_meta(os.path.join(backup_folder, subfolder))
-                if meta:
-                    today = datetime.now().strftime("%Y-%m-%d")
-                    existing_path = os.path.join(backup_folder, subfolder, today, meta["backup_name"])
-                    if os.path.exists(existing_path):
-                        return meta["backup_name"], existing_path
-        except (ValueError, IOError):
-            pass
-
-    with open(lock_file, "w") as f:
-        f.write(str(datetime.now().timestamp()))
-
-    try:
-        current_md5 = _file_md5(db_path)
-        subfolder_path = os.path.join(backup_folder, subfolder)
-        os.makedirs(subfolder_path, exist_ok=True)
-
-        is_dup, existing_name = _is_backup_duplicate(subfolder_path, current_md5)
-        if is_dup and existing_name:
-            today = datetime.now().strftime("%Y-%m-%d")
-            existing_path = os.path.join(subfolder_path, today, existing_name)
-            if os.path.exists(existing_path):
-                return existing_name, existing_path
-
-        today = datetime.now().strftime("%Y-%m-%d")
-        target_dir = os.path.join(backup_folder, subfolder, today)
-        os.makedirs(target_dir, exist_ok=True)
-        timestamp = datetime.now().strftime("%H%M%S")
-        backup_name = f"backup_{timestamp}.db"
-        backup_path = os.path.join(target_dir, backup_name)
-        shutil.copy2(db_path, backup_path)
-
-        _save_last_backup_meta(subfolder_path, current_md5, backup_name)
-
-        return backup_name, backup_path
-    finally:
-        if os.path.exists(lock_file):
-            os.remove(lock_file)
+    # Legacy plain .db backup: database only
+    shutil.copy2(backup_path, db_path)
+    return {"ok": True, "kind": "db_only",
+            "message": "Database restored (legacy backup, settings kept as-is)."}
 
 
-def list_backups(backup_folder, subfolder="local"):
-    subfolder_path = os.path.join(backup_folder, subfolder)
-    if not os.path.isdir(subfolder_path):
+def list_backups(backup_folder):
+    if not os.path.isdir(backup_folder):
         return []
+    files = [f for f in os.listdir(backup_folder)
+             if f.endswith(".db") or f.endswith(".zip")]
     backups = []
-    for date_dir in sorted(os.listdir(subfolder_path), reverse=True):
-        date_path = os.path.join(subfolder_path, date_dir)
-        if not os.path.isdir(date_path):
-            continue
-        for f in os.listdir(date_path):
-            if not f.endswith(".db"):
-                continue
-            path = os.path.join(date_path, f)
-            stat = os.stat(path)
-            size = stat.st_size
-            if size >= 1024 * 1024:
-                size_str = f"{size / (1024 * 1024):.1f} MB"
-            elif size >= 1024:
-                size_str = f"{size / 1024:.1f} KB"
-            else:
-                size_str = f"{size} B"
-            created = datetime.fromtimestamp(stat.st_mtime)
-            backups.append({
-                "name": f,
-                "date": date_dir,
-                "path": path,
-                "rel_path": os.path.join(subfolder, date_dir, f),
-                "created": created.strftime("%d %b %Y, %I:%M %p"),
-                "size": size_str,
-            })
-    backups.sort(key=lambda x: x["rel_path"], reverse=True)
+    for f in files:
+        path = os.path.join(backup_folder, f)
+        stat = os.stat(path)
+        size = stat.st_size
+        if size >= 1024 * 1024:
+            size_str = f"{size / (1024 * 1024):.1f} MB"
+        elif size >= 1024:
+            size_str = f"{size / 1024:.1f} KB"
+        else:
+            size_str = f"{size} B"
+        created = datetime.fromtimestamp(stat.st_mtime)
+        backups.append({
+            "name": f,
+            "created": created.strftime("%d %b %Y, %I:%M %p"),
+            "size": size_str,
+        })
+    backups.sort(key=lambda x: x["name"], reverse=True)
     return backups
 
 
@@ -233,7 +186,7 @@ def whatsapp_message(vehicle, document_label, expiry_date):
         f"Permit Expiry: {vehicle.permit_expiry.strftime('%d-%m-%Y') if vehicle.permit_expiry else 'Not Set'}",
         f"Tax Expiry: {vehicle.tax_expiry.strftime('%d-%m-%Y') if vehicle.tax_expiry else 'Not Set'}",
         f"Tax Mode: {vehicle.tax_mode or 'N/A'}",
-        f"Tax Amount: {('₹%.2f' % vehicle.tax_amount) if vehicle.tax_amount else 'N/A'}",
+        f"Tax Amount: {vehicle.tax_amount or 'N/A'}",
         f"Insurance Expiry: {vehicle.insurance_expiry.strftime('%d-%m-%Y') if vehicle.insurance_expiry else 'Not Set'}",
         f"National Permit: {vehicle.national_permit_expiry.strftime('%d-%m-%Y') if vehicle.national_permit_expiry else 'Not Set'}",
         f"State Permit: {vehicle.state_permit_expiry.strftime('%d-%m-%Y') if vehicle.state_permit_expiry else 'Not Set'}",
@@ -375,9 +328,17 @@ SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
 DEFAULT_SETTINGS = {
     "ai_provider": "openrouter",
     "openrouter_api_key": "",
-    "openrouter_model": "dots-studio/dots-3-note-preview:free",
-    "gemini_api_key": "",
-    "gemini_model": "gemini-2.0-flash",
+    "openrouter_model": "nvidia/llama-nemotron-embed-vl-1b-v2:free",
+    "google_api_key": "",
+    "google_model": "gemini-2.5-flash",
+    "smtp_server": "smtp.gmail.com",
+    "smtp_port": "587",
+    "smtp_user": "",
+    "smtp_password": "",
+    "smtp_from": "",
+    "email_reminders_enabled": True,
+    "auto_reminders_enabled": False,
+    "auto_reminder_windows": [7, 3, 0],
     "gdrive_auto_sync": True,
     "gdrive_last_sync": "",
     "gdrive_last_sync_status": "",
@@ -391,30 +352,8 @@ def load_settings():
             saved = json.load(f)
             settings = dict(DEFAULT_SETTINGS)
             settings.update(saved)
-    else:
-        settings = dict(DEFAULT_SETTINGS)
-
-    env_key = os.environ.get("VCMS_OPENROUTER_KEY", "")
-    if env_key and not settings.get("openrouter_api_key"):
-        settings["openrouter_api_key"] = env_key
-
-    env_model = os.environ.get("VCMS_OPENROUTER_MODEL", "")
-    if env_model and not settings.get("openrouter_model"):
-        settings["openrouter_model"] = env_model
-
-    env_gemini_key = os.environ.get("VCMS_GEMINI_KEY", "")
-    if env_gemini_key and not settings.get("gemini_api_key"):
-        settings["gemini_api_key"] = env_gemini_key
-
-    env_gemini_model = os.environ.get("VCMS_GEMINI_MODEL", "")
-    if env_gemini_model and not settings.get("gemini_model"):
-        settings["gemini_model"] = env_gemini_model
-
-    env_provider = os.environ.get("VCMS_AI_PROVIDER", "")
-    if env_provider in ("openrouter", "gemini") and not settings.get("ai_provider"):
-        settings["ai_provider"] = env_provider
-
-    return settings
+            return settings
+    return dict(DEFAULT_SETTINGS)
 
 
 def save_settings(settings):

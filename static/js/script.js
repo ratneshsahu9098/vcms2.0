@@ -15,12 +15,11 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // Auto-dismiss flash messages with slide-out
+  // Auto-dismiss flash messages after a few seconds
   document.querySelectorAll(".flash").forEach(function (flash) {
     setTimeout(function () {
-      flash.style.transition = "opacity 0.4s ease, transform 0.4s ease";
+      flash.style.transition = "opacity 0.4s ease";
       flash.style.opacity = "0";
-      flash.style.transform = "translateY(-8px)";
       setTimeout(function () { flash.remove(); }, 400);
     }, 5000);
   });
@@ -46,114 +45,84 @@ document.addEventListener("DOMContentLoaded", function () {
       document.documentElement.setAttribute("data-theme", next);
       localStorage.setItem("vcms_theme", next);
       updateIcon();
+      themeIcon.classList.remove("spin");
+      void themeIcon.offsetWidth;
+      themeIcon.classList.add("spin");
     });
   }
 
-  // Number counter animation for stat values
-  function animateCounters() {
-    document.querySelectorAll(".stat-value").forEach(function (el) {
-      var text = el.textContent.trim();
-      var target = parseInt(text, 10);
-      if (isNaN(target) || target === 0) return;
-
-      var duration = 600;
-      var start = performance.now();
-      el.textContent = "0";
-
-      function step(now) {
-        var elapsed = now - start;
-        var progress = Math.min(elapsed / duration, 1);
-        var eased = 1 - Math.pow(1 - progress, 3);
-        el.textContent = Math.round(eased * target);
-        if (progress < 1) {
-          requestAnimationFrame(step);
-        } else {
-          el.textContent = text;
-        }
-      }
-      requestAnimationFrame(step);
-    });
-  }
-  animateCounters();
-
-  // Button loading state on form submit
-  document.querySelectorAll("form").forEach(function (form) {
-    form.addEventListener("submit", function () {
-      var btn = form.querySelector('button[type="submit"]');
-      if (btn && !btn.classList.contains("btn-loading")) {
-        btn.classList.add("btn-loading");
-        var originalHTML = btn.innerHTML;
-        btn.setAttribute("data-original", originalHTML);
-        setTimeout(function () {
-          btn.classList.remove("btn-loading");
-          if (btn.hasAttribute("data-original")) {
-            btn.innerHTML = btn.getAttribute("data-original");
-            btn.removeAttribute("data-original");
-          }
-        }, 8000);
-      }
-    });
-  });
-
-  // Select all checkbox animation
-  var selectAll = document.getElementById("selectAll");
-  var selectAllHead = document.getElementById("selectAllHead");
-  if (selectAll && selectAllHead) {
-    function syncCheckboxes(source) {
-      var checked = source.checked;
-      selectAll.checked = checked;
-      selectAllHead.checked = checked;
-      document.querySelectorAll(".row-check").forEach(function (cb) {
-        cb.checked = checked;
-      });
-      updateBulkButtons();
+  // Escape closes the mobile sidebar
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && sidebar && sidebar.classList.contains("open")) {
+      sidebar.classList.remove("open");
     }
-    selectAll.addEventListener("change", function () { syncCheckboxes(selectAll); });
-    selectAllHead.addEventListener("change", function () { syncCheckboxes(selectAllHead); });
-  }
-
-  function updateBulkButtons() {
-    var checked = document.querySelectorAll(".row-check:checked");
-    var count = checked.length;
-    var printBtn = document.getElementById("btnPrintSelected");
-    var qrBtn = document.getElementById("btnPrintQR");
-    var countSpan = document.getElementById("selectedCount");
-    var qrCountSpan = document.getElementById("selectedQRCount");
-    if (printBtn) printBtn.disabled = count === 0;
-    if (qrBtn) qrBtn.disabled = count === 0;
-    if (countSpan) countSpan.textContent = count;
-    if (qrCountSpan) qrCountSpan.textContent = count;
-  }
-
-  document.querySelectorAll(".row-check").forEach(function (cb) {
-    cb.addEventListener("change", updateBulkButtons);
   });
 
-  // Print selected vehicles
-  var btnPrint = document.getElementById("btnPrintSelected");
-  if (btnPrint) {
-    btnPrint.addEventListener("click", function () {
-      var ids = [];
-      document.querySelectorAll(".row-check:checked").forEach(function (cb) {
-        ids.push(cb.value);
-      });
-      if (ids.length > 0) {
-        window.open("/vehicles/print?ids=" + ids.join(","), "_blank");
-      }
-    });
-  }
+  // ---- UI motion layer (progressive enhancement) ----
+  try {
+    (function motion() {
+      if (!document.documentElement.classList.contains("js-motion")) return;
+      window.__vcmsMotionReady = true;
 
-  // Print QR codes
-  var btnQR = document.getElementById("btnPrintQR");
-  if (btnQR) {
-    btnQR.addEventListener("click", function () {
-      var ids = [];
-      document.querySelectorAll(".row-check:checked").forEach(function (cb) {
-        ids.push(cb.value);
-      });
-      if (ids.length > 0) {
-        window.open("/vehicles/print-qr?ids=" + ids.join(","), "_blank");
+      var supportsIO = "IntersectionObserver" in window;
+      var revealSelector =
+        ".stat-card, .doc-card, .panel, .detail-card, .table-wrap, " +
+        ".form-card, .import-form, .export-form, " +
+        ".table-main tbody tr, .reminder-entry";
+      var targets = Array.prototype.slice.call(document.querySelectorAll(revealSelector));
+
+      function countUp(el) {
+        if (!el || el.dataset.counted) return;
+        var raw = el.textContent.trim().replace(/,/g, "");
+        if (!/^\d+$/.test(raw)) return;
+        var target = parseInt(raw, 10);
+        if (target < 1) return;
+        el.dataset.counted = "1";
+        var withComma = el.textContent.indexOf(",") !== -1;
+        var dur = 800, t0 = null;
+        function frame(now) {
+          if (t0 === null) t0 = now;
+          var p = Math.min((now - t0) / dur, 1);
+          var eased = 1 - Math.pow(1 - p, 3);
+          var val = Math.round(target * eased);
+          el.textContent = withComma ? val.toLocaleString() : String(val);
+          if (p < 1) requestAnimationFrame(frame);
+        }
+        requestAnimationFrame(frame);
       }
-    });
+
+      function onReveal(el) {
+        el.classList.add("revealed");
+        if (el.classList.contains("stat-card")) countUp(el.querySelector(".stat-value"));
+      }
+
+      if (!supportsIO) {
+        targets.forEach(function (el) { el.classList.add("revealed"); });
+        document.querySelectorAll(".stat-value").forEach(countUp);
+        return;
+      }
+
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            onReveal(entry.target);
+            io.unobserve(entry.target);
+          }
+        });
+      }, { rootMargin: "0px 0px -30px 0px", threshold: 0.04 });
+
+      targets.forEach(function (el, i) {
+        if (i < 40) {
+          el.style.setProperty("--rev-d", Math.min(i * 55, 660) + "ms");
+          io.observe(el);
+        } else {
+          onReveal(el);
+        }
+      });
+    })();
+  } catch (err) {
+    // Motion failed: make sure content is never stuck hidden
+    document.documentElement.classList.remove("js-motion");
+    document.querySelectorAll(".revealed").forEach(function (el) { el.classList.remove("revealed"); });
   }
 });

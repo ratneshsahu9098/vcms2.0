@@ -1,7 +1,4 @@
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -26,20 +23,20 @@ class Config:
     # Reminder thresholds, in days before expiry
     REMINDER_WINDOWS = [30, 15, 7, 1]
 
-    # OpenRouter AI settings
+    # AI provider settings ("openrouter" or "google")
+    AI_PROVIDER = os.environ.get("VCMS_AI_PROVIDER", "openrouter")
     OPENROUTER_API_KEY = os.environ.get("VCMS_OPENROUTER_KEY", "")
     OPENROUTER_MODEL = os.environ.get("VCMS_OPENROUTER_MODEL", "nvidia/llama-nemotron-embed-vl-1b-v2:free")
-
-    # Google Gemini AI settings
-    GEMINI_API_KEY = os.environ.get("VCMS_GEMINI_KEY", "")
-    GEMINI_MODEL = os.environ.get("VCMS_GEMINI_MODEL", "gemini-2.0-flash")
-    AI_PROVIDER = os.environ.get("VCMS_AI_PROVIDER", "openrouter")
+    GOOGLE_API_KEY = os.environ.get("VCMS_GOOGLE_KEY", "")
+    GOOGLE_MODEL = os.environ.get("VCMS_GOOGLE_MODEL", "gemini-2.5-flash")
 
     # Google Drive settings
     GDRIVE_ENABLED = os.environ.get("VCMS_GDRIVE_ENABLED", "false").lower() == "true"
 
-    # Email reminder settings
+    # Email reminder (SMTP) settings
     SMTP_SERVER = os.environ.get("VCMS_SMTP_SERVER", "smtp.gmail.com")
-    SMTP_PORT = int(os.environ.get("VCMS_SMTP_PORT", "587"))
-    EMAIL_REMINDERS_ENABLED = os.environ.get("VCMS_EMAIL_REMINDERS_ENABLED", "false").lower() == "true"
+    SMTP_PORT = os.environ.get("VCMS_SMTP_PORT", "587")
+    SMTP_USER = os.environ.get("VCMS_SMTP_USER", "")
+    SMTP_PASSWORD = os.environ.get("VCMS_SMTP_PASSWORD", "")
+    SMTP_FROM = os.environ.get("VCMS_SMTP_FROM", "")
     EMAIL_REMINDER_HOUR = int(os.environ.get("VCMS_EMAIL_REMINDER_HOUR", "9"))

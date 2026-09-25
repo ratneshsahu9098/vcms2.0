@@ -4,10 +4,8 @@ import requests
 from datetime import date, timedelta
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta"
-
-DEFAULT_OPENROUTER_MODEL = "google/gemma-3-1b-it:free"
-DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 
 
 def _get_settings():
@@ -16,15 +14,21 @@ def _get_settings():
 
 
 def get_provider():
-    """Return which AI provider is active: 'openrouter' or 'gemini'."""
     settings = _get_settings()
-    provider = settings.get("ai_provider", "openrouter")
-    if provider not in ("openrouter", "gemini"):
-        provider = "openrouter"
-    return provider
+    provider = settings.get("ai_provider", "") or os.environ.get("VCMS_AI_PROVIDER", "openrouter")
+    provider = provider.strip().lower()
+    return "google" if provider == "google" else "openrouter"
 
 
 def get_api_key():
+    return get_google_api_key() if get_provider() == "google" else get_openrouter_api_key()
+
+
+def get_model():
+    return get_google_model() if get_provider() == "google" else get_openrouter_model()
+
+
+def get_openrouter_api_key():
     settings = _get_settings()
     key = settings.get("openrouter_api_key", "")
     if not key:
@@ -32,39 +36,47 @@ def get_api_key():
     return key
 
 
-def get_model():
+def get_openrouter_model():
     settings = _get_settings()
     model = settings.get("openrouter_model", "")
     if not model:
-        model = os.environ.get("VCMS_OPENROUTER_MODEL", DEFAULT_OPENROUTER_MODEL)
+        model = os.environ.get("VCMS_OPENROUTER_MODEL", "google/gemma-3-1b-it:free")
     return model
 
 
-def get_gemini_api_key():
+def get_google_api_key():
     settings = _get_settings()
-    key = settings.get("gemini_api_key", "")
+    key = settings.get("google_api_key", "")
     if not key:
-        key = os.environ.get("VCMS_GEMINI_KEY", "")
+        key = os.environ.get("VCMS_GOOGLE_KEY", "")
     return key
 
 
-def get_gemini_model():
+def get_google_model():
     settings = _get_settings()
-    model = settings.get("gemini_model", "")
+    model = settings.get("google_model", "")
     if not model:
-        model = os.environ.get("VCMS_GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+        model = os.environ.get("VCMS_GOOGLE_MODEL", DEFAULT_GEMINI_MODEL)
     return model
 
 
-def get_active_model():
-    if get_provider() == "gemini":
-        return get_gemini_model()
-    return get_model()
+def get_provider_key(provider):
+    return get_google_api_key() if provider == "google" else get_openrouter_api_key()
 
 
-def get_headers():
+def get_provider_model(provider):
+    return get_google_model() if provider == "google" else get_openrouter_model()
+
+
+def get_headers(provider=None):
+    provider = provider or get_provider()
+    if provider == "google":
+        return {
+            "x-goog-api-key": get_google_api_key(),
+            "Content-Type": "application/json",
+        }
     return {
-        "Authorization": f"Bearer {get_api_key()}",
+        "Authorization": f"Bearer {get_openrouter_api_key()}",
         "Content-Type": "application/json",
         "HTTP-Referer": "http://localhost:5000",
         "X-Title": "VCMS Vehicle Compliance",
@@ -72,36 +84,54 @@ def get_headers():
 
 
 def check_api_key():
-    if get_provider() == "gemini":
-        return bool(get_gemini_api_key().strip())
     return bool(get_api_key().strip())
 
 
 # ---------------------------------------------------------------------------
-# Gemini message conversion
+# Google Gemini request/response helpers
 # ---------------------------------------------------------------------------
 
-def _to_gemini_payload(messages, model, stream=False):
-    """Convert OpenAI-style messages to a Gemini GenerateContentRequest body."""
-    system_text = ""
+def _gemini_url(action, model, stream=False):
+    url = f"{GEMINI_BASE_URL}/{model}:{action}"
+    if stream:
+        url += "?alt=sse"
+    return url
+
+
+def _to_gemini_payload(messages, temperature=0.3, max_tokens=None):
+    system_parts = []
     contents = []
     for msg in messages:
         role = msg.get("role", "user")
         content = msg.get("content", "")
         if role == "system":
-            system_text += content
+            system_parts.append(content)
         elif role == "assistant":
             contents.append({"role": "model", "parts": [{"text": content}]})
         else:
             contents.append({"role": "user", "parts": [{"text": content}]})
 
-    body = {
-        "contents": contents,
-        "generationConfig": {"temperature": 0.3},
-    }
-    if system_text.strip():
-        body["system_instruction"] = {"parts": [{"text": system_text}]}
-    return body
+    payload = {"contents": contents, "generationConfig": {"temperature": temperature}}
+    if max_tokens:
+        payload["generationConfig"]["maxOutputTokens"] = max_tokens
+    if system_parts:
+        payload["systemInstruction"] = {"parts": [{"text": "\n\n".join(system_parts)}]}
+    return payload
+
+
+def _gemini_extract_text(data):
+    candidates = data.get("candidates") or [{}]
+    parts = candidates[0].get("content", {}).get("parts", []) or []
+    text = "".join(p.get("text", "") for p in parts)
+    return text.strip() if text else None
+
+
+def _gemini_error_message(response):
+    try:
+        err = response.json().get("error", {})
+        return err.get("message") or response.text[:200]
+    except Exception:
+        return response.text[:200] if response.text else "Unknown Google API error"
 
 
 # ---------------------------------------------------------------------------
@@ -254,78 +284,25 @@ def ask_assistant_stream(user_question, vehicles, history=None):
 # ---------------------------------------------------------------------------
 
 def chat_completion(messages, model=None):
-    if get_provider() == "gemini":
-        return gemini_chat_completion(messages, model)
-    return openrouter_chat_completion(messages, model)
-
-
-def chat_completion_stream(messages, model=None):
-    if get_provider() == "gemini":
-        return gemini_chat_completion_stream(messages, model)
-    return openrouter_chat_completion_stream(messages, model)
-
-
-# ---------------------------------------------------------------------------
-# Retry helper — transient 429 / 5xx / connection errors backed off and retried
-# ---------------------------------------------------------------------------
-
-RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
-MAX_RETRIES = 3
-
-
-def _api_error_message(r):
-    """Extract a human-readable message from an API error response body."""
-    try:
-        data = r.json()
-        return data.get("error", {}).get("message", "") or r.text[:200]
-    except Exception:
-        return r.text[:200]
-
-
-def _post_with_retry(url, payload, headers=None, timeout=120):
-    import time
-    headers = headers or {}
-    last_error = None
-    for attempt in range(MAX_RETRIES + 1):
-        try:
-            r = requests.post(url, json=payload, headers=headers, timeout=timeout)
-        except requests.exceptions.ConnectionError as exc:
-            last_error = exc
-            if attempt >= MAX_RETRIES:
-                raise
-            time.sleep(2 ** attempt)
-            continue
-
-        if r.status_code in RETRYABLE_STATUSES:
-            message = _api_error_message(r) or f"HTTP {r.status_code}"
-            last_error = requests.exceptions.HTTPError(
-                f"{r.status_code} {r.reason or ''}: {message}".strip(), response=r
-            )
-            if attempt >= MAX_RETRIES:
-                raise last_error
-            time.sleep(2 ** attempt)
-            continue
-
-        r.raise_for_status()
-        return r
-
-    raise last_error
-
-
-def openrouter_chat_completion(messages, model=None):
+    if get_provider() == "google":
+        return google_chat_completion(messages, model)
     model = model or get_model()
     payload = {
         "model": model,
         "messages": messages,
         "temperature": 0.3,
     }
-    r = _post_with_retry(OPENROUTER_URL, payload, headers=get_headers())
+    r = requests.post(OPENROUTER_URL, json=payload, headers=get_headers(), timeout=120)
+    r.raise_for_status()
     data = r.json()
     content = data.get("choices", [{}])[0].get("message", {}).get("content")
     return content.strip() if content else None
 
 
-def openrouter_chat_completion_stream(messages, model=None):
+def chat_completion_stream(messages, model=None):
+    if get_provider() == "google":
+        yield from google_chat_completion_stream(messages, model)
+        return
     model = model or get_model()
     payload = {
         "model": model,
@@ -349,230 +326,136 @@ def openrouter_chat_completion_stream(messages, model=None):
                         yield delta["content"]
 
 
-def gemini_chat_completion(messages, model=None):
-    model = model or get_gemini_model()
-    url = f"{GEMINI_URL}/models/{model}:generateContent?key={get_gemini_api_key()}"
-    payload = _to_gemini_payload(messages, model)
-    r = _post_with_retry(url, payload, headers={"Content-Type": "application/json"})
-    data = r.json()
-    parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-    text = "".join(p.get("text", "") for p in parts)
-    return text.strip() if text else None
+# ---------------------------------------------------------------------------
+# Google Gemini chat completion
+# ---------------------------------------------------------------------------
+
+def google_chat_completion(messages, model=None):
+    model = model or get_google_model()
+    url = _gemini_url("generateContent", model)
+    payload = _to_gemini_payload(messages, temperature=0.3)
+    r = requests.post(url, json=payload, headers=get_headers(), timeout=120)
+    r.raise_for_status()
+    return _gemini_extract_text(r.json())
 
 
-def gemini_chat_completion_stream(messages, model=None):
-    model = model or get_gemini_model()
-    url = f"{GEMINI_URL}/models/{model}:streamGenerateContent?alt=sse&key={get_gemini_api_key()}"
-    payload = _to_gemini_payload(messages, model)
-    r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, stream=True, timeout=120)
+def google_chat_completion_stream(messages, model=None):
+    model = model or get_google_model()
+    url = _gemini_url("generateContent", model, stream=True)
+    payload = _to_gemini_payload(messages, temperature=0.3)
+    r = requests.post(url, json=payload, headers=get_headers(), stream=True, timeout=120)
     r.raise_for_status()
     for line in r.iter_lines():
-        if line:
-            line = line.decode("utf-8")
-            if line.startswith("data: "):
-                data = line[6:].strip()
-                if not data:
-                    continue
-                try:
-                    chunk = json.loads(data)
-                except (ValueError, TypeError):
-                    continue
-                parts = chunk.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-                text = "".join(p.get("text", "") for p in parts)
-                if text:
-                    yield text
+        if not line:
+            continue
+        line = line.decode("utf-8")
+        if not line.startswith("data: "):
+            continue
+        data = line[6:]
+        if data.strip() == "[DONE]":
+            break
+        chunk = json.loads(data)
+        for candidate in chunk.get("candidates", []) or []:
+            for part in candidate.get("content", {}).get("parts", []) or []:
+                if "text" in part:
+                    yield part["text"]
 
 
 # ---------------------------------------------------------------------------
 # API test
 # ---------------------------------------------------------------------------
 
-def test_api_connection():
-    if get_provider() == "gemini":
-        return test_gemini_connection()
-    return test_openrouter_connection()
-
-
-def test_openrouter_connection():
+def test_api_connection(provider=None):
     import time
-    api_key = get_api_key()
+    provider = provider or get_provider()
+    if provider not in ("openrouter", "google"):
+        provider = "openrouter"
+    api_key = get_provider_key(provider)
     if not api_key:
-        return {"ok": False, "error": "No API key configured"}
-    model = get_model()
-    payload = {
-        "model": model,
-        "messages": [{"role": "user", "content": "Say hi in 3 words."}],
-        "temperature": 0.3,
-        "max_tokens": 20,
-    }
+        return {"ok": False, "error": f"No API key configured for {'Google Gemini' if provider == 'google' else 'OpenRouter'}"}
+    model = get_provider_model(provider)
+
+    if provider == "google":
+        url = _gemini_url("generateContent", model)
+        payload = _to_gemini_payload(
+            [{"role": "user", "content": "Say hi in 3 words."}],
+            temperature=0.3, max_tokens=20,
+        )
+        extract = _gemini_extract_text
+        error_label = "Google AI Studio"
+    else:
+        url = OPENROUTER_URL
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": "Say hi in 3 words."}],
+            "temperature": 0.3,
+            "max_tokens": 20,
+        }
+        extract = lambda d: (d.get("choices", [{}])[0].get("message", {}).get("content") or "").strip() or None
+        error_label = "OpenRouter"
+
     start = time.time()
     try:
-        r = requests.post(OPENROUTER_URL, json=payload, headers=get_headers(), timeout=60)
+        r = requests.post(url, json=payload, headers=get_headers(provider), timeout=60)
         elapsed = round(time.time() - start, 1)
         if r.status_code == 200:
-            data = r.json()
-            content = data.get("choices", [{}])[0].get("message", {}).get("content")
-            reply = content.strip() if content else str(data)[:200]
-            return {"ok": True, "elapsed": elapsed, "model": model, "reply": reply}
-        elif r.status_code == 401:
-            return {"ok": False, "error": "Invalid API key (401 Unauthorized)", "elapsed": elapsed}
+            reply = extract(r.json())
+            return {"ok": True, "elapsed": elapsed, "model": model, "provider": provider, "reply": reply or "OK"}
+        elif r.status_code in (401, 403):
+            return {"ok": False, "error": "Invalid API key (401/403 Unauthorized)", "elapsed": elapsed}
         elif r.status_code == 429:
             return {"ok": False, "error": "Rate limited (429). Try again later.", "elapsed": elapsed}
         else:
-            return {"ok": False, "error": f"HTTP {r.status_code}: {r.text[:200]}", "elapsed": elapsed}
+            detail = _gemini_error_message(r) if provider == "google" else r.text[:200]
+            return {"ok": False, "error": f"HTTP {r.status_code}: {detail}", "elapsed": elapsed}
     except requests.exceptions.ConnectionError:
-        return {"ok": False, "error": "Cannot connect to OpenRouter. Check your internet."}
+        return {"ok": False, "error": f"Cannot connect to {error_label}. Check your internet."}
     except requests.exceptions.Timeout:
         return {"ok": False, "error": "Request timed out (60s)."}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
-def test_gemini_connection():
+def test_api_connection_debug(provider=None):
     import time
-    api_key = get_gemini_api_key()
+    provider = provider or get_provider()
+    if provider not in ("openrouter", "google"):
+        provider = "openrouter"
+    api_key = get_provider_key(provider)
     if not api_key:
-        return {"ok": False, "error": "No Gemini API key configured"}
-    model = get_gemini_model()
-    url = f"{GEMINI_URL}/models/{model}:generateContent?key={api_key}"
-    payload = {
-        "contents": [{"role": "user", "parts": [{"text": "Say hi in 3 words."}]}],
-        "generationConfig": {"temperature": 0.3, "maxOutputTokens": 20},
-    }
-    start = time.time()
-    try:
-        r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=60)
-        elapsed = round(time.time() - start, 1)
-        if r.status_code == 200:
-            data = r.json()
-            parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-            text = "".join(p.get("text", "") for p in parts)
-            reply = text.strip() if text else str(data)[:200]
-            return {"ok": True, "elapsed": elapsed, "model": model, "reply": reply}
-        elif r.status_code == 400:
-            error = _gemini_error_message(r)
-            return {"ok": False, "error": f"Invalid request: {error}", "elapsed": elapsed}
-        elif r.status_code == 403:
-            return {"ok": False, "error": "Invalid API key (403 Forbidden)", "elapsed": elapsed}
-        elif r.status_code == 429:
-            return {"ok": False, "error": "Rate limited / quota exceeded (429). Try again later.", "elapsed": elapsed}
-        else:
-            return {"ok": False, "error": f"HTTP {r.status_code}: {r.text[:200]}", "elapsed": elapsed}
-    except requests.exceptions.ConnectionError:
-        return {"ok": False, "error": "Cannot connect to Google's Gemini API. Check your internet."}
-    except requests.exceptions.Timeout:
-        return {"ok": False, "error": "Request timed out (60s)."}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return {"ok": False, "debug": {"error": f"No API key configured for {'Google Gemini' if provider == 'google' else 'OpenRouter'}"}}
 
-
-def _gemini_error_message(r):
-    try:
-        data = r.json()
-        err = data.get("error", {})
-        return err.get("message", r.text[:200])
-    except Exception:
-        return r.text[:200]
-
-
-def test_api_connection_debug():
-    if get_provider() == "gemini":
-        return test_gemini_connection_debug()
-    return test_openrouter_connection_debug()
-
-
-def test_openrouter_connection_debug():
-    import time
-    api_key = get_api_key()
-    if not api_key:
-        return {"ok": False, "debug": {"error": "No API key configured"}}
-
-    model = get_model()
-    headers = get_headers()
+    model = get_provider_model(provider)
+    headers = get_headers(provider)
     masked_key = api_key[:12] + "..." + api_key[-4:] if len(api_key) > 16 else "****"
-    payload = {
-        "model": model,
-        "messages": [{"role": "user", "content": "Say hi in 3 words."}],
-        "temperature": 0.3,
-        "max_tokens": 20,
-    }
 
-    debug = {
-        "request": {
-            "url": OPENROUTER_URL,
-            "method": "POST",
-            "auth": f"Bearer {masked_key}",
+    if provider == "google":
+        url = _gemini_url("generateContent", model)
+        payload = _to_gemini_payload(
+            [{"role": "user", "content": "Say hi in 3 words."}],
+            temperature=0.3, max_tokens=20,
+        )
+        extract = _gemini_extract_text
+    else:
+        url = OPENROUTER_URL
+        payload = {
             "model": model,
-            "body": json.dumps(payload, indent=2),
-            "headers": {k: (v if k != "Authorization" else f"Bearer {masked_key}") for k, v in headers.items()},
-        },
-        "response": None,
-        "timing": {},
-    }
-
-    start = time.time()
-    try:
-        r = requests.post(OPENROUTER_URL, json=payload, headers=headers, timeout=60)
-        total = round(time.time() - start, 2)
-
-        resp_body = ""
-        try:
-            resp_body = json.dumps(r.json(), indent=2)
-        except Exception:
-            resp_body = r.text[:1000]
-
-        debug["response"] = {
-            "status_code": r.status_code,
-            "status_text": "OK" if r.status_code == 200 else "Error",
-            "headers": dict(r.headers),
-            "body": resp_body[:2000],
+            "messages": [{"role": "user", "content": "Say hi in 3 words."}],
+            "temperature": 0.3,
+            "max_tokens": 20,
         }
-        debug["timing"] = {"total_seconds": total}
-
-        if r.status_code == 200:
-            data = r.json()
-            content = data.get("choices", [{}])[0].get("message", {}).get("content")
-            reply = content.strip() if content else str(data)[:200]
-            return {"ok": True, "debug": debug, "reply": reply, "elapsed": total}
-        else:
-            return {"ok": False, "debug": debug, "elapsed": total}
-
-    except requests.exceptions.ConnectionError:
-        debug["timing"]["total_seconds"] = round(time.time() - start, 2)
-        debug["response"] = {"error": "Connection failed — could not reach openrouter.ai"}
-        return {"ok": False, "debug": debug}
-    except requests.exceptions.Timeout:
-        debug["timing"]["total_seconds"] = round(time.time() - start, 2)
-        debug["response"] = {"error": "Request timed out after 60 seconds"}
-        return {"ok": False, "debug": debug}
-    except Exception as e:
-        debug["timing"]["total_seconds"] = round(time.time() - start, 2)
-        debug["response"] = {"error": str(e)}
-        return {"ok": False, "debug": debug}
-
-
-def test_gemini_connection_debug():
-    import time
-    api_key = get_gemini_api_key()
-    if not api_key:
-        return {"ok": False, "debug": {"error": "No Gemini API key configured"}}
-
-    model = get_gemini_model()
-    masked_key = api_key[:12] + "..." + api_key[-4:] if len(api_key) > 16 else "****"
-    url = f"{GEMINI_URL}/models/{model}:generateContent"
-    payload = {
-        "contents": [{"role": "user", "parts": [{"text": "Say hi in 3 words."}]}],
-        "generationConfig": {"temperature": 0.3, "maxOutputTokens": 20},
-    }
+        extract = lambda d: (d.get("choices", [{}])[0].get("message", {}).get("content") or "").strip() or None
 
     debug = {
         "request": {
             "url": url,
             "method": "POST",
-            "auth": f"x-goog-api-key: {masked_key}",
+            "auth": f"Bearer {masked_key}" if provider == "openrouter" else f"x-goog-api-key {masked_key}",
             "model": model,
+            "provider": provider,
             "body": json.dumps(payload, indent=2),
-            "headers": {"Content-Type": "application/json"},
+            "headers": {k: (v if k not in ("Authorization", "x-goog-api-key") else masked_key)
+                        for k, v in headers.items()},
         },
         "response": None,
         "timing": {},
@@ -580,12 +463,7 @@ def test_gemini_connection_debug():
 
     start = time.time()
     try:
-        r = requests.post(
-            url,
-            json=payload,
-            headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
-            timeout=60,
-        )
+        r = requests.post(url, json=payload, headers=headers, timeout=60)
         total = round(time.time() - start, 2)
 
         resp_body = ""
@@ -603,17 +481,15 @@ def test_gemini_connection_debug():
         debug["timing"] = {"total_seconds": total}
 
         if r.status_code == 200:
-            data = r.json()
-            parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-            text = "".join(p.get("text", "") for p in parts)
-            reply = text.strip() if text else str(data)[:200]
-            return {"ok": True, "debug": debug, "reply": reply, "elapsed": total}
+            reply = extract(r.json())
+            return {"ok": True, "debug": debug, "reply": reply or "OK", "elapsed": total}
         else:
             return {"ok": False, "debug": debug, "elapsed": total}
 
     except requests.exceptions.ConnectionError:
         debug["timing"]["total_seconds"] = round(time.time() - start, 2)
-        debug["response"] = {"error": "Connection failed — could not reach generativelanguage.googleapis.com"}
+        host = "generativelanguage.googleapis.com" if provider == "google" else "openrouter.ai"
+        debug["response"] = {"error": f"Connection failed — could not reach {host}"}
         return {"ok": False, "debug": debug}
     except requests.exceptions.Timeout:
         debug["timing"]["total_seconds"] = round(time.time() - start, 2)
@@ -623,88 +499,13 @@ def test_gemini_connection_debug():
         debug["timing"]["total_seconds"] = round(time.time() - start, 2)
         debug["response"] = {"error": str(e)}
         return {"ok": False, "debug": debug}
-
-
-# ---------------------------------------------------------------------------
-# Document comparison — field-by-field diff against existing vehicle
-# ---------------------------------------------------------------------------
-
-COMPARE_FIELDS = [
-    ("engine_number", "Engine Number", "text"),
-    ("owner_name", "Owner Name", "text"),
-    ("address", "Address", "text"),
-    ("mobile_number", "Mobile Number", "text"),
-    ("vehicle_type", "Vehicle Type", "text"),
-    ("registration_date", "Registration Date", "date"),
-    ("puc_expiry", "PUC Expiry", "date"),
-    ("fitness_expiry", "Fitness Expiry", "date"),
-    ("permit_expiry", "Permit Expiry", "date"),
-    ("national_permit_number", "NP Auth No", "text"),
-    ("tax_from", "Tax From", "date"),
-    ("tax_expiry", "Tax Expiry", "date"),
-    ("tax_mode", "Tax Mode", "text"),
-    ("insurance_expiry", "Insurance Expiry", "date"),
-    ("insurance_company", "Insurance Company", "text"),
-    ("policy_number", "Policy Number", "text"),
-]
-
-
-def compare_vehicle_data(scanned, vehicle):
-    """Compare scanned data against an existing vehicle record.
-
-    Returns a list of dicts:
-        {field, label, type, existing_value, scanned_value, status}
-    status is one of: "empty" (DB is blank, fill from scan),
-                       "changed" (both have values that differ),
-                       "same" (values match)
-    """
-    from utils import parse_date
-
-    results = []
-    for field, label, ftype in COMPARE_FIELDS:
-        scanned_val = scanned.get(field)
-        existing_val = getattr(vehicle, field, None)
-
-        # Normalize scanned value
-        if ftype == "date":
-            if scanned_val:
-                from datetime import date as _date
-                if isinstance(scanned_val, _date):
-                    parsed_scan = scanned_val
-                else:
-                    parsed_scan = parse_date(str(scanned_val))
-            else:
-                parsed_scan = None
-            db_val = existing_val
-        else:
-            parsed_scan = str(scanned_val).strip() if scanned_val else ""
-            db_val = str(existing_val).strip() if existing_val else ""
-
-        # Determine status
-        if not db_val:
-            status = "empty"
-        elif parsed_scan and str(parsed_scan) != str(db_val):
-            status = "changed"
-        else:
-            status = "same"
-
-        results.append({
-            "field": field,
-            "label": label,
-            "type": ftype,
-            "existing_value": db_val if db_val else "—",
-            "scanned_value": parsed_scan if parsed_scan else "—",
-            "status": status,
-        })
-
-    return results
 
 
 # ---------------------------------------------------------------------------
 # Document parser
 # ---------------------------------------------------------------------------
 
-PARSE_PROMPT = """Extract vehicle information from the following OCR text of an Indian vehicle document (RC, Insurance, PUC, or Fitness certificate).
+PARSE_PROMPT = """Extract vehicle information from the following OCR text of an Indian vehicle document (RC, Insurance, PUC, Fitness certificate, or Tax receipt).
 
 Return a JSON object with these fields (use null for missing fields):
 {{
@@ -712,20 +513,22 @@ Return a JSON object with these fields (use null for missing fields):
     "chassis_number": "string",
     "engine_number": "string",
     "owner_name": "string",
-    "address": "string or null",
     "registration_date": "YYYY-MM-DD or null",
     "puc_expiry": "YYYY-MM-DD or null",
     "fitness_expiry": "YYYY-MM-DD or null",
+    "permit_from": "YYYY-MM-DD or null",
     "permit_expiry": "YYYY-MM-DD or null",
-    "national_permit_number": "string or null (NP Auth No / National Permit Auth Number)",
-    "tax_from": "YYYY-MM-DD or null",
-    "tax_expiry": "YYYY-MM-DD or null",
-    "tax_mode": "string or null (e.g. Quarterly, Annual, Life Tax)",
+    "permit_auth_no": "string or null",
+    "permit_address": "string or null",
     "insurance_expiry": "YYYY-MM-DD or null",
     "insurance_company": "string or null",
     "policy_number": "string or null",
     "vehicle_type": "string or null",
-    "document_type": "RC/Insurance/PUC/Fitness/Tax/Unknown"
+    "tax_from": "YYYY-MM-DD or null",
+    "tax_expiry": "YYYY-MM-DD or null",
+    "tax_mode": "Monthly (M)/Quarterly (Q)/Half-Yearly (HY)/Yearly (Y)/Lifetime (LTT)/null",
+    "tax_amount": number or null,
+    "document_type": "RC/Insurance/PUC/Fitness/Tax Receipt/Unknown"
 }}
 
 Rules:
@@ -733,9 +536,8 @@ Rules:
 - Use DD-MM-YYYY or DD/MM/YYYY format dates and convert to YYYY-MM-DD
 - Uppercase vehicle and chassis numbers
 - If a field is not found, set it to null
-- "NP Auth No", "National Permit Auth No", "NP Authorization" all map to national_permit_number
-- Address may appear as a block of text with house number, street, city, pin code — combine into one string
-- Tax fields: look for "TAX PAID UP TO", "TAX VALID UP TO", "ROAD TAX VALID UP TO", "TAX FROM / TAX UPTO", "e-TAX", "Quarterly Tax", "Annual Tax" etc. The date the tax is valid until goes to tax_expiry, the period start to tax_from, and the payment pattern (Quarterly/Annual/Half-yearly/Life) goes to tax_mode.
+- For a tax receipt: tax_from is the tax period start, tax_expiry is the valid-until date, tax_amount is the paid amount as a number, and tax_mode is the closest match from the list above (lifetime tax -> "Lifetime (LTT)")
+- For a permit: permit_from is the validity start date, permit_expiry is the valid-until date, permit_auth_no is the permit/authorisation number, and permit_address is the address printed on the permit (holder or issuing authority)
 
 OCR Text:
 {ocr_text}
