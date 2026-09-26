@@ -14,15 +14,15 @@
     overflow-x: hidden;
   }
 
-  @page { size: A4 landscape; margin: 0; }
+  @page { size: A4; margin: 0; }
 
   .print-page {
     background: #fff;
     color: #111;
     font-family: "Segoe UI", Roboto, sans-serif;
-    width: 297mm;
-    min-height: 210mm;
-    max-height: 210mm;
+    width: 210mm;
+    min-height: 297mm;
+    max-height: 297mm;
     margin: 10px auto;
     padding: 8mm 10mm;
     box-shadow: 0 2px 12px rgba(0,0,0,0.12);
@@ -103,11 +103,10 @@
     overflow-wrap: anywhere;
     font-size: 10pt;
   }
-  .doc-table th:nth-child(1), .doc-table td:nth-child(1) { width: 14%; }
+  .doc-table th:nth-child(1), .doc-table td:nth-child(1) { width: 18%; }
   .doc-table th:nth-child(2), .doc-table td:nth-child(2) { width: 18%; }
-  .doc-table th:nth-child(3), .doc-table td:nth-child(3) { width: 44%; }
-  .doc-table th:nth-child(4), .doc-table td:nth-child(4) { width: 12%; }
-  .doc-table th:nth-child(5), .doc-table td:nth-child(5) { width: 12%; }
+  .doc-table th:nth-child(3), .doc-table td:nth-child(3) { width: 50%; }
+  .doc-table th:nth-child(4), .doc-table td:nth-child(4) { width: 14%; }
 
   .doc-table tbody tr:hover { background: #f9fafb; }
 
@@ -127,11 +126,7 @@
   .doc-date { font-size: 9pt; color: #374151; }
   .doc-meta { font-size: 8pt; color: #374151; margin-left: 4pt; }
   .current-badge { font-size: 7pt; padding: 1pt 4pt; background: #dcfce7; color: #16a34a; border-radius: 3pt; font-weight: 600; margin-left: 4pt; }
-
-  .earliest-expiry {
-    font-weight: 600;
-  }
-  .earliest-expiry small { display: block; font-weight: 400; color: #666; font-size: 8pt; margin-top: 2pt; }
+  .doc-days { font-size: 7pt; color: #666; margin-left: 4pt; }
 
   /* Status badge colors - matching app theme (light mode for print) */
   .badge-status {
@@ -175,7 +170,7 @@
     html, body { background: #fff; }
     .no-print-btn { display: none !important; }
     .print-page {
-      width: 297mm; height: 210mm;
+      width: 210mm; height: 297mm;
       margin: 0; padding: 8mm 10mm;
       box-shadow: none; border: none;
     }
@@ -220,14 +215,16 @@
         <th>Vehicle</th>
         <th>Owner</th>
         <th>Expiring Documents</th>
-        <th>Earliest Expiry</th>
         <th>Status</th>
       </tr>
     </thead>
     <tbody>
       {% for r in results %}
       <tr>
-        <td><strong>{{ r.vehicle.vehicle_number }}</strong></td>
+        <td>
+          <strong>{{ r.vehicle.vehicle_number }}</strong>
+          <br><small class="text-muted">{{ r.vehicle.vehicle_type or 'N/A' }} · {{ r.vehicle.district or 'N/A' }}</small>
+        </td>
         <td>{{ r.vehicle.owner_name }}</td>
         <td>
           {% for doc in r.documents %}
@@ -235,6 +232,11 @@
             <span class="doc-label">{{ doc.field }}</span>
             <span class="doc-date">{{ doc.expiry.strftime('%d-%m-%Y') }}</span>
             <span class="badge-status {{ doc.class }}">{{ doc.status }}</span>
+            <small class="doc-days">
+              {% if doc.days < 0 %}{{ -doc.days }} days overdue
+              {% elif doc.days == 0 %}Today
+              {% else %}{{ doc.days }} days left{% endif %}
+            </small>
             {%- if doc.certificate_number %}
             <span class="doc-meta">Cert: {{ doc.certificate_number }}</span>
             {%- endif %}
@@ -250,12 +252,7 @@
           </div>
           {% endfor %}
         </td>
-        <td class="earliest-expiry">
-          {% set earliest = r.documents[0] %}
-          {{ earliest.expiry.strftime('%d-%m-%Y') }}
-          <small>({{ earliest.days }} days{% if earliest.days < 0 %} overdue{% elif earliest.days == 0 %} today{% else %} left{% endif %})</small>
-        </td>
-        <td><span class="badge-status {{ earliest.class }}">{{ earliest.status }}</span></td>
+        <td><span class="badge-status {{ r.vehicle.overall_status() }}">{{ r.vehicle.overall_status() | replace('status-', '') | title }}</span></td>
       </tr>
       {% endfor %}
     </tbody>
