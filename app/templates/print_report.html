@@ -111,9 +111,12 @@
   .doc-table tbody tr:hover { background: #f9fafb; }
 
   .doc-item {
-    display: block;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4pt;
     margin-bottom: 3pt;
-    padding: 2pt 4pt;
+    padding: 3pt 4pt;
     border-bottom: 1px dashed #eee;
     background: #f9fafb;
     border-radius: 3pt;
@@ -122,11 +125,11 @@
     border-bottom: none;
     margin-bottom: 0;
   }
-  .doc-label { font-weight: 600; font-size: 10pt; color: #111; }
-  .doc-date { font-size: 9pt; color: #374151; }
-  .doc-meta { font-size: 8pt; color: #374151; margin-left: 4pt; }
-  .current-badge { font-size: 7pt; padding: 1pt 4pt; background: #dcfce7; color: #16a34a; border-radius: 3pt; font-weight: 600; margin-left: 4pt; }
-  .doc-days { font-size: 7pt; color: #666; margin-left: 4pt; }
+  .doc-label { font-weight: 600; font-size: 10pt; color: #111; white-space: nowrap; }
+  .doc-date { font-size: 9pt; color: #374151; white-space: nowrap; }
+  .doc-meta { font-size: 8pt; color: #374151; margin-left: 4pt; white-space: nowrap; }
+  .current-badge { font-size: 7pt; padding: 1pt 4pt; background: #dcfce7; color: #16a34a; border-radius: 3pt; font-weight: 600; margin-left: 4pt; white-space: nowrap; }
+  .doc-days { font-size: 7pt; color: #666; margin-left: 4pt; white-space: nowrap; }
 
   /* Status badge colors - matching app theme (light mode for print) */
   .badge-status {
@@ -221,12 +224,12 @@
     <tbody>
       {% for r in results %}
       <tr>
-        <td>
+        <td style="vertical-align: top;">
           <strong>{{ r.vehicle.vehicle_number }}</strong>
-          <br><small class="text-muted">{{ r.vehicle.vehicle_type or 'N/A' }} · {{ r.vehicle.district or 'N/A' }}</small>
+          <br><small class="text-muted">{{ r.vehicle.vehicle_type or 'N/A' }}</small>
         </td>
-        <td>{{ r.vehicle.owner_name }}</td>
-        <td>
+        <td style="vertical-align: top;">{{ r.vehicle.owner_name }}</td>
+        <td style="vertical-align: top;">
           {% for doc in r.documents %}
           <div class="doc-item">
             <span class="doc-label">{{ doc.field }}</span>
