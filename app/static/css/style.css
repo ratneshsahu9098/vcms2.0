@@ -19,8 +19,10 @@
   --danger-bg: rgba(239,68,68,0.12);
   --danger-border: rgba(239,68,68,0.3);
   --warning-bg: rgba(234,179,8,0.15);
+  --warning-border: rgba(234,179,8,0.3);
   --caution-bg: rgba(249,115,22,0.15);
   --gray-bg: rgba(107,114,128,0.15);
+  --gray-border: rgba(107,114,128,0.3);
   --focus-ring: rgba(59,130,246,0.2);
   --shadow: rgba(0,0,0,0.3);
   --row-hover: rgba(255,255,255,0.02);
@@ -52,8 +54,10 @@
   --danger-bg: rgba(220,38,38,0.1);
   --danger-border: rgba(220,38,38,0.3);
   --warning-bg: rgba(202,138,4,0.1);
+  --warning-border: rgba(202,138,4,0.3);
   --caution-bg: rgba(234,179,8,0.1);
   --gray-bg: rgba(156,163,175,0.1);
+  --gray-border: rgba(156,163,175,0.3);
   --focus-ring: rgba(37,99,235,0.15);
   --shadow: rgba(0,0,0,0.1);
   --row-hover: rgba(0,0,0,0.02);
@@ -399,6 +403,23 @@ a:hover { text-decoration: underline; }
 .report-tab.active { background: var(--active-bg); color: var(--blue); border-color: var(--active-border); }
 .report-group-title { margin: 18px 0 10px; font-weight: 700; color: var(--text); }
 
+.doc-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  margin: 2px 4px 2px 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.doc-label { font-weight: 600; color: var(--text); }
+.doc-date { color: var(--text-muted); font-size: 0.75rem; }
+.doc-meta { color: var(--text-muted); font-size: 0.7rem; margin-left: 4px; }
+.current-badge { font-size: 0.65rem; padding: 1px 5px; background: var(--success-bg); color: var(--green); border-radius: 4px; font-weight: 600; margin-left: 4px; }
+
 /* ---------- Detail view ---------- */
 .vehicle-nav {
   display: flex;
@@ -565,6 +586,10 @@ code { background: var(--code-bg); color: var(--green); }
   font-weight: 600;
 }
 .sum-chip-neutral { background: var(--charcoal); color: var(--text); border: 1px solid var(--border); }
+.sum-chip.status-red { background: var(--danger-bg); color: var(--red); border: 1px solid var(--danger-border); }
+.sum-chip.status-orange { background: var(--caution-bg); color: var(--orange); border: 1px solid var(--caution-bg); }
+.sum-chip.status-yellow { background: var(--warning-bg); color: var(--yellow); border: 1px solid var(--warning-border); }
+.sum-chip.status-gray { background: var(--gray-bg); color: var(--gray); border: 1px solid var(--gray-border); }
 .days-overdue { color: var(--red); font-weight: 700; }
 .days-soon { color: var(--orange); font-weight: 600; }
 

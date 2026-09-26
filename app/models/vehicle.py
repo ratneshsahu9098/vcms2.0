@@ -3,6 +3,43 @@ from datetime import date, datetime
 from app.extensions import db
 
 
+class DocumentExpiry(db.Model):
+    """Multiple expiry dates per document type per vehicle."""
+    __tablename__ = "document_expiries"
+
+    id = db.Column(db.Integer, primary_key=True)
+    vehicle_id = db.Column(db.Integer, db.ForeignKey("vehicles.id"), nullable=False, index=True)
+    document_type = db.Column(db.String(30), nullable=False, index=True)  # PUC, Fitness, Permit, Tax, Insurance, National Permit, State Permit
+    expiry_date = db.Column(db.Date, nullable=False, index=True)
+    certificate_number = db.Column(db.String(100))
+    issuing_authority = db.Column(db.String(200))
+    remarks = db.Column(db.Text)
+    is_current = db.Column(db.Boolean, default=True)  # Mark the latest/active one
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    vehicle = db.relationship("Vehicle", backref=db.backref("document_expiries", lazy="dynamic", cascade="all, delete-orphan"))
+
+    def status_info(self):
+        """Return (status, css_class, days_left) for this expiry."""
+        return Vehicle.status_for(self.expiry_date) + ((self.expiry_date - date.today()).days,)
+
+    def to_dict(self):
+        status, css, days = self.status_info()
+        return {
+            "id": self.id,
+            "document_type": self.document_type,
+            "expiry_date": self.expiry_date.isoformat() if self.expiry_date else "",
+            "certificate_number": self.certificate_number or "",
+            "issuing_authority": self.issuing_authority or "",
+            "remarks": self.remarks or "",
+            "is_current": self.is_current,
+            "status": status,
+            "class": css,
+            "days_left": days,
+        }
+
+
 class Vehicle(db.Model):
     __tablename__ = "vehicles"
 
@@ -20,6 +57,7 @@ class Vehicle(db.Model):
 
     registration_date = db.Column(db.Date)
 
+    # Legacy single-date fields (kept for backward compatibility)
     puc_expiry = db.Column(db.Date)
     fitness_expiry = db.Column(db.Date)
     permit_from = db.Column(db.Date)
@@ -43,15 +81,29 @@ class Vehicle(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # ---- Compliance helpers -------------------------------------------------
+    # ---- Document types -------------------------------------------------------
+    DOCUMENT_TYPES = [
+        "PUC",
+        "Fitness",
+        "Permit",
+        "Tax",
+        "Insurance",
+        "National Permit",
+        "State Permit",
+    ]
 
+    # Legacy field mapping (for backward compat)
     DOCUMENT_FIELDS = {
         "PUC": "puc_expiry",
         "Fitness": "fitness_expiry",
         "Permit": "permit_expiry",
         "Tax": "tax_expiry",
         "Insurance": "insurance_expiry",
+        "National Permit": "national_permit_expiry",
+        "State Permit": "state_permit_expiry",
     }
+
+    # ---- Compliance helpers ---------------------------------------------------
 
     @staticmethod
     def status_for(expiry_date):
@@ -70,10 +122,45 @@ class Vehicle(db.Model):
             return "Expiring Soon", "status-yellow"
         return "Valid", "status-green"
 
+    def get_expiries(self, document_type=None):
+        """Get all expiry records for this vehicle, optionally filtered by type."""
+        query = self.document_expiries
+        if document_type:
+            query = query.filter_by(document_type=document_type)
+        return query.order_by(DocumentExpiry.expiry_date.desc()).all()
+
+    def get_current_expiry(self, document_type):
+        """Get the current (latest/marked) expiry for a document type."""
+        # First try the one marked as current
+        current = self.document_expiries.filter_by(document_type=document_type, is_current=True).first()
+        if current:
+            return current
+        # Fallback: latest by date
+        return self.document_expiries.filter_by(document_type=document_type).order_by(DocumentExpiry.expiry_date.desc()).first()
+
+    def get_all_expiries_grouped(self):
+        """Return dict of document_type -> list of expiry records (all)."""
+        result = {}
+        for dt in self.DOCUMENT_TYPES:
+            expiries = self.get_expiries(dt)
+            if expiries:
+                result[dt] = [e.to_dict() for e in expiries]
+        return result
+
     def document_statuses(self):
+        """
+        Backward-compatible: return status based on latest expiry per type,
+        falling back to legacy single-date fields.
+        """
         result = {}
         for label, field in self.DOCUMENT_FIELDS.items():
-            expiry = getattr(self, field)
+            # Try new multi-expiry system first
+            current = self.get_current_expiry(label)
+            if current:
+                expiry = current.expiry_date
+            else:
+                # Fallback to legacy field
+                expiry = getattr(self, field)
             status, css_class = self.status_for(expiry)
             result[label] = {"expiry": expiry, "status": status, "class": css_class}
         return result
@@ -119,4 +206,6 @@ class Vehicle(db.Model):
             "remarks": self.remarks or "",
             "created_at": self.created_at.isoformat() if self.created_at else "",
             "updated_at": self.updated_at.isoformat() if self.updated_at else "",
+            # New: multi-expiry data
+            "document_expiries": self.get_all_expiries_grouped(),
         }

@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ report_label }} - Print</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    background: #666;
+    overflow-x: hidden;
+  }
+
+  @page { size: A4 landscape; margin: 0; }
+
+  .print-page {
+    background: #fff;
+    color: #111;
+    font-family: "Segoe UI", Roboto, sans-serif;
+    width: 297mm;
+    min-height: 210mm;
+    max-height: 210mm;
+    margin: 10px auto;
+    padding: 8mm 10mm;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+    border: 1px solid #ddd;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .print-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 3px solid #111;
+    padding-bottom: 6pt;
+    margin-bottom: 6pt;
+    flex-shrink: 0;
+  }
+  .print-header-left h1 { margin: 0; font-size: 18pt; color: #555; }
+  .print-header-left p { margin: 1px 0 0; color: #888; font-size: 11pt; }
+
+  .report-meta {
+    flex-shrink: 0;
+    text-align: right;
+    font-size: 10pt;
+    color: #666;
+  }
+  .report-meta .label { font-weight: 700; color: #333; }
+
+  .summary-bar {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 8pt;
+    padding: 6pt 0;
+    border-bottom: 2px solid #111;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+  .sum-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 9pt;
+    font-weight: 700;
+  }
+  .sum-chip.status-red { background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; }
+  .sum-chip.status-orange { background: #ffedd5; color: #ea580c; border: 1px solid #fed7aa; }
+  .sum-chip.status-yellow { background: #fef9c3; color: #ca8a04; border: 1px solid #fef08a; }
+  .sum-chip.status-gray { background: #f3f4f6; color: #6b7280; border: 1px solid #e5e7eb; }
+  .sum-chip.sum-chip-neutral { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+
+  .table-wrap {
+    flex: 1;
+    overflow: auto;
+  }
+
+  .doc-table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    font-size: 11pt;
+    margin-top: 4pt;
+  }
+  .doc-table th {
+    background: #f0f0f0;
+    text-align: left;
+    padding: 6pt 8pt;
+    font-weight: 700;
+    border: 1px solid #ccc;
+    font-size: 10pt;
+  }
+  .doc-table td {
+    padding: 6pt 8pt;
+    border: 1px solid #ccc;
+    overflow-wrap: anywhere;
+    font-size: 10pt;
+  }
+  .doc-table th:nth-child(1), .doc-table td:nth-child(1) { width: 14%; }
+  .doc-table th:nth-child(2), .doc-table td:nth-child(2) { width: 18%; }
+  .doc-table th:nth-child(3), .doc-table td:nth-child(3) { width: 44%; }
+  .doc-table th:nth-child(4), .doc-table td:nth-child(4) { width: 12%; }
+  .doc-table th:nth-child(5), .doc-table td:nth-child(5) { width: 12%; }
+
+  .doc-table tbody tr:hover { background: #f9fafb; }
+
+  .doc-item {
+    display: block;
+    margin-bottom: 3pt;
+    padding: 2pt 4pt;
+    border-bottom: 1px dashed #eee;
+    background: #f9fafb;
+    border-radius: 3pt;
+  }
+  .doc-item:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+  }
+  .doc-label { font-weight: 600; font-size: 10pt; color: #111; }
+  .doc-date { font-size: 9pt; color: #374151; }
+  .doc-meta { font-size: 8pt; color: #374151; margin-left: 4pt; }
+  .current-badge { font-size: 7pt; padding: 1pt 4pt; background: #dcfce7; color: #16a34a; border-radius: 3pt; font-weight: 600; margin-left: 4pt; }
+
+  .earliest-expiry {
+    font-weight: 600;
+  }
+  .earliest-expiry small { display: block; font-weight: 400; color: #666; font-size: 8pt; margin-top: 2pt; }
+
+  /* Status badge colors - matching app theme (light mode for print) */
+  .badge-status {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 8pt;
+    font-weight: 600;
+  }
+  .status-red { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+  .status-orange { background: #fff7ed; color: #ea580c; border: 1px solid #fed7aa; }
+  .status-yellow { background: #fefce8; color: #ca8a04; border: 1px solid #fef08a; }
+  .status-green { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+  .status-gray { background: #f9fafb; color: #6b7280; border: 1px solid #e5e7eb; }
+
+  .no-print-btn {
+    position: fixed; top: 16px; right: 16px; z-index: 999;
+    display: flex; gap: 8px;
+  }
+  .no-print-btn button {
+    padding: 8px 16px; border-radius: 6px; border: none;
+    cursor: pointer; font-weight: 600; font-size: 0.85rem;
+  }
+  .btn-print { background: #3b82f6; color: #fff; }
+  .btn-print:hover { background: #2563eb; }
+  .btn-close { background: #e5e7eb; color: #333; }
+  .btn-close:hover { background: #d1d5db; }
+
+  .print-footer {
+    margin-top: auto;
+    padding-top: 6pt;
+    border-top: 1px solid #ccc;
+    display: flex;
+    justify-content: space-between;
+    font-size: 8pt;
+    color: #888;
+    flex-shrink: 0;
+  }
+
+  @media print {
+    html, body { background: #fff; }
+    .no-print-btn { display: none !important; }
+    .print-page {
+      width: 297mm; height: 210mm;
+      margin: 0; padding: 8mm 10mm;
+      box-shadow: none; border: none;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="no-print-btn">
+  <button class="btn-print" onclick="window.print()"><i class="fa-solid fa-print"></i> Print Report</button>
+  <button class="btn-close" onclick="window.close()"><i class="fa-solid fa-xmark"></i> Close</button>
+</div>
+
+<div class="print-page">
+
+  <div class="print-header">
+    <div class="print-header-left">
+      <h1><i class="fa-solid fa-truck-fast"></i> VCMS</h1>
+      <p>Vehicle Compliance Management System</p>
+    </div>
+    <div class="report-meta">
+      <div>{{ report_label }}</div>
+      <div class="label">Window:</div> Next {{ days }} days
+      <div class="label">Generated:</div> {{ generated }}
+    </div>
+  </div>
+
+  <div class="summary-bar">
+    <span class="sum-chip status-red">{{ summary.expired }} Expired</span>
+    <span class="sum-chip status-orange">{{ summary.week }} Due in 7 days</span>
+    {% if summary.days > 7 %}
+    <span class="sum-chip status-yellow">{{ summary.later }} Due in 8–{{ summary.days }} days</span>
+    {% endif %}
+    <span class="sum-chip status-gray">{{ summary.total }} Documents</span>
+    <span class="sum-chip sum-chip-neutral">{{ summary.vehicle_count }} Vehicles</span>
+  </div>
+
+  <div class="table-wrap">
+  <table class="doc-table">
+    <thead>
+      <tr>
+        <th>Vehicle</th>
+        <th>Owner</th>
+        <th>Expiring Documents</th>
+        <th>Earliest Expiry</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in results %}
+      <tr>
+        <td><strong>{{ r.vehicle.vehicle_number }}</strong></td>
+        <td>{{ r.vehicle.owner_name }}</td>
+        <td>
+          {% for doc in r.documents %}
+          <div class="doc-item">
+            <span class="doc-label">{{ doc.field }}</span>
+            <span class="doc-date">{{ doc.expiry.strftime('%d-%m-%Y') }}</span>
+            <span class="badge-status {{ doc.class }}">{{ doc.status }}</span>
+            {%- if doc.certificate_number %}
+            <span class="doc-meta">Cert: {{ doc.certificate_number }}</span>
+            {%- endif %}
+            {%- if doc.issuing_authority %}
+            <span class="doc-meta">Auth: {{ doc.issuing_authority }}</span>
+            {%- endif %}
+            {%- if doc.remarks %}
+            <span class="doc-meta">{{ doc.remarks }}</span>
+            {%- endif %}
+            {%- if doc.is_current %}
+            <span class="current-badge">Current</span>
+            {%- endif %}
+          </div>
+          {% endfor %}
+        </td>
+        <td class="earliest-expiry">
+          {% set earliest = r.documents[0] %}
+          {{ earliest.expiry.strftime('%d-%m-%Y') }}
+          <small>({{ earliest.days }} days{% if earliest.days < 0 %} overdue{% elif earliest.days == 0 %} today{% else %} left{% endif %})</small>
+        </td>
+        <td><span class="badge-status {{ earliest.class }}">{{ earliest.status }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <div class="print-footer">
+    <span>VCMS - Vehicle Compliance Management System</span>
+    <span>Generated on {{ generated }}</span>
+  </div>
+
+</div>
+
+</body>
+</html>

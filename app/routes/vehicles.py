@@ -1,5 +1,5 @@
 """Vehicle CRUD, detail view, printing, QR codes, WhatsApp links."""
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import urllib.parse
 
 from flask import (Blueprint, abort, flash, redirect, render_template, request, send_file, session, url_for)
@@ -10,7 +10,7 @@ from app.migrations import resequence_sr_nos
 from app.models import (Vehicle)
 from app.services import email_service
 from app.services.vehicle_service import (validate_vehicle_form)
-from app.utils import (generate_vehicle_qr, parse_date, to_float, whatsapp_expired_reminder, whatsapp_message)
+from app.routes.dashboard import REPORT_LABELS
 
 bp = Blueprint("vehicles", __name__)
 
@@ -346,6 +346,77 @@ def print_vehicles():
             "badge_color": badge_color,
         })
     return render_template("print_vehicles.html", vehicle_data=vehicle_data)
+
+@bp.route("/reports/print")
+@login_required
+def print_report():
+    """Print-friendly version of the all_expiring report."""
+    report_type = request.args.get("type", "")
+    try:
+        days = int(request.args.get("days", 30))
+    except (TypeError, ValueError):
+        days = 30
+    if days not in (7, 30, 90):
+        days = 30
+
+    if report_type != "all_expiring":
+        flash("Only All Expiring report can be printed.", "error")
+        return redirect(url_for("main.reports", type=report_type, days=days))
+
+    from app.routes.dashboard import Vehicle
+    vehicles = Vehicle.query.all()
+    today = date.today()
+    window_end = today + timedelta(days=days)
+
+    # Group expiring documents by vehicle using multi-expiry system
+    vehicle_docs = {}
+    for v in vehicles:
+        expiring = []
+        for doc_type in Vehicle.DOCUMENT_TYPES:
+            expiries = v.get_expiries(doc_type)
+            for exp in expiries:
+                if exp.expiry_date and exp.expiry_date <= window_end:
+                    status, css = Vehicle.status_for(exp.expiry_date)
+                    days_left = (exp.expiry_date - today).days
+                    expiring.append({
+                        "field": doc_type,
+                        "expiry": exp.expiry_date,
+                        "certificate_number": exp.certificate_number,
+                        "issuing_authority": exp.issuing_authority,
+                        "remarks": exp.remarks,
+                        "is_current": exp.is_current,
+                        "status": status,
+                        "class": css,
+                        "days": days_left,
+                    })
+        if expiring:
+            expiring.sort(key=lambda d: d["expiry"])
+            vehicle_docs[v] = expiring
+
+    # Sort vehicles by earliest expiry
+    sorted_vehicles = sorted(vehicle_docs.items(),
+                             key=lambda kv: min(d["expiry"] for d in kv[1]))
+
+    results = [{"vehicle": v, "documents": docs} for v, docs in sorted_vehicles]
+
+    # Summary
+    total_docs = sum(len(docs) for docs in vehicle_docs.values())
+    summary = {
+        "expired": sum(1 for v, docs in vehicle_docs.items()
+                       for d in docs if d["days"] < 0),
+        "week": sum(1 for v, docs in vehicle_docs.items()
+                    for d in docs if 0 <= d["days"] <= 7),
+        "later": sum(1 for v, docs in vehicle_docs.items()
+                     for d in docs if 7 < d["days"] <= days),
+        "total": total_docs,
+        "days": days,
+        "vehicle_count": len(results),
+    }
+
+    return render_template("print_report.html", 
+                          results=results, summary=summary, days=days,
+                          report_label=REPORT_LABELS.get("all_expiring", ""),
+                          generated=datetime.now().strftime("%d %b %Y, %I:%M %p"))
 
 @bp.route("/vehicles/print-qr")
 @login_required

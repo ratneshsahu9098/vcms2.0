@@ -144,6 +144,35 @@
   .dot-red    { background: #ef4444; }
   .dot-gray   { background: #9ca3af; }
 
+  .print-doc-entry {
+    display: block;
+    margin-bottom: 3pt;
+    padding: 2pt 0;
+    border-bottom: 1px dashed #eee;
+  }
+  .print-doc-entry:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+  }
+  .print-doc-date {
+    font-weight: 600;
+    font-size: 11pt;
+  }
+  .print-doc-meta {
+    font-size: 8pt;
+    color: #666;
+    margin-left: 6pt;
+  }
+  .print-current-badge {
+    font-size: 7pt;
+    padding: 1pt 4pt;
+    background: #dcfce7;
+    color: #16a34a;
+    border-radius: 3pt;
+    font-weight: 600;
+    margin-left: 6pt;
+  }
+
   .legend {
     display: flex;
     flex-wrap: wrap;
@@ -260,13 +289,27 @@
   <div class="section-title">Document Compliance Status</div>
   <table class="doc-table">
     <thead>
-      <tr><th>Document</th><th>Expiry Date</th><th>Status</th></tr>
+      <tr><th>Document</th><th>Expiry Dates</th><th>Status</th></tr>
     </thead>
     <tbody>
       {% for label, info in item.statuses.items() %}
+      {% set expiries = item.vehicle.get_expiries(label) %}
       <tr>
         <td><strong>{{ label }}</strong></td>
-        <td>{{ info.expiry.strftime('%d-%m-%Y') if info.expiry else 'Not Set' }}</td>
+        <td>
+          {% if expiries %}
+            {% for exp in expiries %}
+            <div class="print-doc-entry">
+              <span class="print-doc-date">{{ exp.expiry_date.strftime('%d-%m-%Y') if exp.expiry_date else 'Not Set' }}</span>
+              {% if exp.certificate_number %}<span class="print-doc-meta">Cert: {{ exp.certificate_number }}</span>{% endif %}
+              {% if exp.issuing_authority %}<span class="print-doc-meta">Auth: {{ exp.issuing_authority }}</span>{% endif %}
+              {% if exp.is_current %}<span class="print-current-badge">Current</span>{% endif %}
+            </div>
+            {% endfor %}
+          {% else %}
+            {{ info.expiry.strftime('%d-%m-%Y') if info.expiry else 'Not Set' }}
+          {% endif %}
+        </td>
         <td>
           <span class="status-dot {{ info.class.replace('status-', 'dot-') }}"></span>
           {{ info.status }}

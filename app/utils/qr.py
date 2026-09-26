@@ -6,6 +6,17 @@ def generate_vehicle_qr(vehicle):
     def fmt_date(d):
         return d.strftime("%d-%m-%Y") if d else "Not Set"
 
+    def get_current_expiry(doc_type):
+        """Get current expiry for a document type (multi-expiry or legacy)."""
+        current = vehicle.get_current_expiry(doc_type)
+        if current:
+            return current.expiry_date
+        # Fallback to legacy
+        field = vehicle.DOCUMENT_FIELDS.get(doc_type)
+        if field:
+            return getattr(vehicle, field)
+        return None
+
     report_id = f"VC-{vehicle.created_at.strftime('%Y%m%d')}-{vehicle.id:04d}" if vehicle.created_at else f"VC-{vehicle.id:04d}"
 
     qr_text = (
@@ -30,21 +41,23 @@ def generate_vehicle_qr(vehicle):
         "DOCUMENT STATUS\n"
         f"{'-' * 32}\n"
         "\n"
-        f"PUC         : {fmt_date(vehicle.puc_expiry)}\n"
-        f"Fitness     : {fmt_date(vehicle.fitness_expiry)}\n"
-        f"Permit      : {fmt_date(vehicle.permit_expiry)}\n"
-        f"Tax         : {fmt_date(vehicle.tax_expiry)}\n"
-        f"Tax Mode    : {vehicle.tax_mode or 'N/A'}\n"
-        f"Tax Amount  : {'₹%.2f' % vehicle.tax_amount if vehicle.tax_amount else 'N/A'}\n"
-        f"Insurance   : {fmt_date(vehicle.insurance_expiry)}\n"
-        f"Nat Permit  : {fmt_date(vehicle.national_permit_expiry)}\n"
-        f"State Permit: {fmt_date(vehicle.state_permit_expiry)}\n"
-        "\n"
-        f"Insurance Co: {vehicle.insurance_company or 'N/A'}\n"
-        f"Policy No   : {vehicle.policy_number or 'N/A'}\n"
-        f"Pollution   : {vehicle.pollution_certificate_number or 'N/A'}\n"
-        "\n"
     )
+
+    # Document expiries - show current for each type
+    for doc_type in vehicle.DOCUMENT_TYPES:
+        expiry = get_current_expiry(doc_type)
+        label = doc_type.ljust(12)
+        qr_text += f"{label}: {fmt_date(expiry)}\n"
+
+    qr_text += "\n"
+    qr_text += f"Tax Mode    : {vehicle.tax_mode or 'N/A'}\n"
+    qr_text += f"Tax Amount  : {'₹%.2f' % vehicle.tax_amount if vehicle.tax_amount else 'N/A'}\n"
+    qr_text += "\n"
+    qr_text += f"Insurance Co: {vehicle.insurance_company or 'N/A'}\n"
+    qr_text += f"Policy No   : {vehicle.policy_number or 'N/A'}\n"
+    qr_text += f"Pollution   : {vehicle.pollution_certificate_number or 'N/A'}\n"
+    "\n"
+
     if vehicle.remarks:
         qr_text += f"Remarks     : {vehicle.remarks}\n"
         qr_text += "\n"

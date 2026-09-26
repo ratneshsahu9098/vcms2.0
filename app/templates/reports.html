@@ -7,6 +7,7 @@
   {% for key, label in [
     ('puc_due','PUC Due'), ('fitness_due','Fitness Due'), ('tax_due','Tax Due'),
     ('permit_due','Permit Due'), ('insurance_due','Insurance Due'),
+    ('all_expiring','All Expiring'),
     ('owner_wise','Owner-wise'), ('type_wise','Vehicle Type-wise'),
     ('monthly_renewals','Monthly Renewals'), ('yearly_renewals','Yearly Renewals')
   ] %}
@@ -23,13 +24,13 @@
     <div class="print-org">VCMS &middot; Vehicle Compliance Management System</div>
     <h2 class="print-title">{{ report_label }}</h2>
     <div class="print-meta">
-      Generated {{ generated }}{% if report_type in due_types %} &middot; Window: next {{ days }} days{% endif %}
+      Generated {{ generated }}{% if report_type in due_types or report_type == 'all_expiring' %} &middot; Window: next {{ days }} days{% endif %}
     </div>
   </div>
 
   <div class="report-toolbar">
     <div class="report-toolbar-left no-print">
-      {% if report_type in due_types %}
+      {% if report_type in due_types or report_type == 'all_expiring' %}
       <span class="toolbar-label">Window</span>
       {% for d in [7, 30, 90] %}
       <a href="{{ url_for('main.reports', type=report_type, days=d) }}" class="window-chip {{ 'active' if days == d }}">{{ d }} days</a>
@@ -39,7 +40,7 @@
 
     {% if summary %}
     <span class="report-summary">
-      {% if report_type in due_types %}
+      {% if report_type in due_types or report_type == 'all_expiring' %}
       <span class="sum-chip status-red">{{ summary.expired }} expired</span>
       <span class="sum-chip status-orange">{{ summary.week }} due in 7 days</span>
       {% if summary.days > 7 %}
@@ -56,16 +57,61 @@
     </span>
     {% endif %}
 
+    {% if report_type == 'all_expiring' %}
+    <a href="{{ url_for('vehicles.print_report', type=report_type, days=days) }}" class="btn btn-primary no-print" target="_blank"><i class="fa-solid fa-print"></i> Print Report</a>
+{% else %}
     <button class="btn btn-outline-secondary no-print" onclick="window.print()"><i class="fa-solid fa-print"></i> Print</button>
+{% endif %}
   </div>
 
-  {% if report_type in due_types %}
+  {% if report_type in due_types or report_type == 'all_expiring' %}
     {% if results %}
     <div class="table-wrap">
     <table class="table-main">
-      <thead><tr><th>Vehicle</th><th>Owner</th><th>Document</th><th>Expiry Date</th><th>Status</th><th>Days Left</th></tr></thead>
+      <thead>
+        <tr>
+          {% if report_type == 'all_expiring' %}
+          <th>Vehicle</th><th>Owner</th><th>Expiring Documents</th><th>Earliest Expiry</th><th>Status</th>
+          {% else %}
+          <th>Vehicle</th><th>Owner</th><th>Document</th><th>Expiry Date</th><th>Status</th><th>Days Left</th>
+          {% endif %}
+        </tr>
+      </thead>
       <tbody>
         {% for r in results %}
+        {% if report_type == 'all_expiring' %}
+        <tr>
+          <td><a href="{{ url_for('vehicles.view_vehicle', vehicle_id=r.vehicle.id) }}">{{ r.vehicle.vehicle_number }}</a></td>
+          <td>{{ r.vehicle.owner_name }}</td>
+          <td>
+            {% for doc in r.documents %}
+            <div class="doc-item">
+              <span class="doc-label">{{ doc.field }}</span>
+              <span class="doc-date">{{ doc.expiry.strftime('%d-%m-%Y') }}</span>
+              <span class="badge-status {{ doc.class }}">{{ doc.status }}</span>
+              {% if doc.certificate_number %}
+              <span class="doc-meta">Cert: {{ doc.certificate_number }}</span>
+              {% endif %}
+              {% if doc.issuing_authority %}
+              <span class="doc-meta">Auth: {{ doc.issuing_authority }}</span>
+              {% endif %}
+              {% if doc.remarks %}
+              <span class="doc-meta">{{ doc.remarks }}</span>
+              {% endif %}
+              {% if doc.is_current %}
+              <span class="current-badge">Current</span>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </td>
+          <td>
+            {% set earliest = r.documents[0] %}
+            {{ earliest.expiry.strftime('%d-%m-%Y') }}
+            <br><small class="text-muted">({{ earliest.days }} days{% if earliest.days < 0 %} overdue{% elif earliest.days == 0 %} today{% else %} left{% endif %})</small>
+          </td>
+          <td><span class="badge-status {{ earliest.class }}">{{ earliest.status }}</span></td>
+        </tr>
+        {% else %}
         <tr>
           <td><a href="{{ url_for('vehicles.view_vehicle', vehicle_id=r.vehicle.id) }}">{{ r.vehicle.vehicle_number }}</a></td>
           <td>{{ r.vehicle.owner_name }}</td>
@@ -79,6 +125,7 @@
             {%- endif %}
           </td>
         </tr>
+        {% endif %}
         {% endfor %}
       </tbody>
     </table>
