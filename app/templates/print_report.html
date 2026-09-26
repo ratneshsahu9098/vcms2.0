@@ -112,7 +112,7 @@
     flex-shrink: 0;
   }
 
-  .metric-card {
+  .metric {
     min-height:84px;
     border:1px solid var(--border);
     border-radius:10px;
@@ -120,7 +120,7 @@
     background:#fff;
   }
 
-  .metric-value {
+  .metric-number {
     font-size:30px;
     line-height:1;
     font-weight:750;
@@ -136,11 +136,11 @@
     letter-spacing:.2px;
   }
 
-  .metric-card--expired .metric-value { color:var(--red); }
-  .metric-card--urgent .metric-value { color:#ea580c; }
-  .metric-card--soon .metric-value { color:#c88a00; }
-  .metric-card--total .metric-value { color:#3b82f6; }
-  .metric-card--vehicles .metric-value { color:#334155; }
+  .metric.expired .metric-number { color:var(--red); }
+  .metric.week .metric-number { color:#ea580c; }
+  .metric.month .metric-number { color:#c88a00; }
+  .metric.docs .metric-number { color:#3b82f6; }
+  .metric.vehicles .metric-number { color:#334155; }
 
   /* Report table - Grid Layout (3 columns: Vehicle, Owner, Expiring Documents) */
   .report-table {
@@ -154,7 +154,7 @@
   .table-head,
   .vehicle-row {
     display:grid;
-    grid-template-columns:18% 20% minmax(0, 62%);
+    grid-template-columns:21% 24% minmax(0, 55%);
   }
 
   .table-head {
@@ -207,14 +207,14 @@
   }
 
   .vehicle-number {
-    font-size:15px;
+    font-size:16px;
     font-weight:750;
     color:#111827;
     white-space:nowrap;
   }
 
   .owner-name {
-    font-size:14px;
+    font-size:15px;
     line-height:1.45;
     font-weight:600;
     color:#26364b;
@@ -227,9 +227,9 @@
 
   .document-row {
     display:grid;
-    grid-template-columns:minmax(105px, 1fr) 130px 105px;
+    grid-template-columns:minmax(130px, 1fr) 120px 95px;
     align-items:center;
-    gap:10px;
+    gap:8px;
     min-height:44px;
   }
 
@@ -238,13 +238,13 @@
   }
 
   .document-name {
-    font-size:14px;
+    font-size:15px;
     font-weight:650;
     color:#172033;
   }
 
   .document-date {
-    font-size:14px;
+    font-size:15px;
     color:#40536c;
     white-space:nowrap;
   }
@@ -337,15 +337,6 @@
     .summary-bar {
       grid-template-columns:1fr;
     }
-
-    .report-table {
-      overflow-x:auto;
-    }
-
-    .table-head,
-    .vehicle-row {
-      min-width:820px;
-    }
   }
 
   @media print {
@@ -400,13 +391,13 @@
       margin:12px 0;
     }
 
-    .metric-card {
+    .metric {
       min-height:56px;
       padding:8px 10px;
       border-radius:6px;
     }
 
-    .metric-value {
+    .metric-number {
       font-size:21px;
     }
 
@@ -422,7 +413,7 @@
 
     .table-head,
     .vehicle-row {
-      grid-template-columns:18% 20% minmax(0, 62%);
+      grid-template-columns:21% 24% minmax(0, 55%);
     }
 
     .table-head {
@@ -449,11 +440,11 @@
     .owner-name,
     .document-name,
     .document-date {
-      font-size:9px;
+      font-size:10.5px;
     }
 
     .document-row {
-      grid-template-columns:minmax(0,1fr) 78px 62px;
+      grid-template-columns:minmax(130px,1fr) 82px 68px;
       gap:5px;
       min-height:28px;
     }
@@ -461,7 +452,7 @@
     .days-badge {
       padding:3px 5px;
       border-radius:4px;
-      font-size:8px;
+      font-size:9.5px;
     }
 
     .days-dot {
@@ -523,23 +514,23 @@
 
   <!-- ========== SUMMARY METRICS ========== -->
   <div class="summary-bar">
-    <div class="metric-card metric-card--expired">
-      <div class="metric-value">{{ summary.expired }}</div>
+    <div class="metric expired">
+      <div class="metric-number">{{ summary.expired }}</div>
       <div class="metric-label">Expired</div>
     </div>
-    <div class="metric-card metric-card--urgent">
+    <div class="metric week">
       <div class="metric-value">{{ summary.week }}</div>
       <div class="metric-label">Due in 7 days</div>
     </div>
-    <div class="metric-card metric-card--soon">
+    <div class="metric month">
       <div class="metric-value">{{ summary.later }}</div>
-      <div class="metric-label">Due in 8–{{ summary.days }} days</div>
+      <div class="metric-label">Due in 8&ndash;{{ summary.days }} days</div>
     </div>
-    <div class="metric-card metric-card--total">
+    <div class="metric docs">
       <div class="metric-value">{{ summary.total }}</div>
       <div class="metric-label">Documents</div>
     </div>
-    <div class="metric-card metric-card--vehicles">
+    <div class="metric vehicles">
       <div class="metric-value">{{ summary.vehicle_count }}</div>
       <div class="metric-label">Vehicles</div>
     </div>
