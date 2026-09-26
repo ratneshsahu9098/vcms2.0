@@ -341,13 +341,13 @@
     }
   }
 
-  @media print {
-    @page { size: A4; margin: 8mm; }
+@media print {
+    @page { size: A4 portrait; margin: 10mm 12mm; }
 
     html, body {
       background:#fff !important;
       color:#111 !important;
-      font-size:12px;
+      font-size:11px;
     }
 
     .print-page {
@@ -360,113 +360,114 @@
     .no-print-btn { display: none !important; }
 
     .report-header {
-      padding-bottom:10px;
-      gap:16px;
+      padding-bottom:8px;
+      gap:14px;
     }
 
     .brand-title {
-      font-size:24px;
+      font-size:22px;
     }
 
     .brand-subtitle {
-      font-size:11px;
-      margin-top:4px;
+      font-size:10px;
+      margin-top:3px;
     }
 
     .brand-icon {
-      width:32px;
-      height:32px;
-      font-size:18px;
+      width:30px;
+      height:30px;
+      font-size:16px;
     }
 
     .report-title {
-      font-size:18px;
-      margin-bottom:4px;
+      font-size:17px;
+      margin-bottom:3px;
     }
 
     .meta-line {
-      font-size:11px;
-    }
-
-    .metrics {
-      gap:8px;
-      margin:10px 0;
-    }
-
-    .metric {
-      min-height:56px;
-      padding:10px 12px;
-      border-radius:6px;
-    }
-
-    .metric-number {
-      font-size:24px;
-    }
-
-    .metric-label {
-      margin-top:4px;
       font-size:10px;
     }
 
+    .metrics {
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+      margin: 8px 0;
+    }
+
+    .metric {
+      min-height: 54px;
+      padding: 8px 9px;
+      border-radius: 5px;
+    }
+
+    .metric-number {
+      font-size: 20px;
+    }
+
+    .metric-label {
+      margin-top: 3px;
+      font-size: 8px;
+    }
+
     .report-table {
-      border-radius:6px;
-      overflow:visible;
+      border-radius: 5px;
+      overflow: visible;
     }
 
     .table-head,
     .vehicle-row {
-      grid-template-columns:18% 22% minmax(0, 60%);
+      grid-template-columns: 21% 24% 55%;
     }
 
     .table-head {
-      min-height:36px;
-      font-size:11px;
+      min-height: 32px;
+      font-size: 10px;
     }
 
     .table-head > div {
-      padding:0 8px;
+      padding: 0 7px;
     }
 
     .vehicle-row {
-      break-inside:avoid;
-      page-break-inside:avoid;
+      break-inside: avoid;
+      page-break-inside: avoid;
     }
 
     .vehicle-cell,
     .owner-cell,
     .documents-cell {
-      padding:9px;
+      padding: 8px 9px;
     }
 
     .vehicle-number,
     .owner-name,
     .document-name,
     .document-date {
-      font-size:12px;
+      font-size: 10.5px;
     }
 
     .document-row {
-      grid-template-columns:minmax(150px,1fr) 110px 80px;
-      gap:8px;
-      min-height:32px;
+      grid-template-columns: minmax(140px, 1fr) 105px 75px;
+      gap: 6px;
+      min-height: 28px;
     }
 
     .days-badge {
-      padding:4px 6px;
-      border-radius:5px;
-      font-size:11px;
+      padding: 3px 5px;
+      border-radius: 4px;
+      font-size: 10px;
     }
 
     .days-dot {
-      width:6px;
-      height:6px;
+      width: 5px;
+      height: 5px;
     }
 
     .print-footer {
-      margin-top:8px;
-      font-size:10px;
+      margin-top: 6px;
+      font-size: 9px;
     }
-  }
+}
 
   .no-print-btn {
     position: fixed; top: 12px; right: 12px; z-index: 999;
