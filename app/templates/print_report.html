@@ -30,24 +30,12 @@
     color:var(--text);
     font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
                  "Segoe UI", sans-serif;
-    font-size: 12pt;
-    line-height: 1.5;
-    overflow-x: hidden;
   }
 
-  @page { size: A4; margin: 0; }
-
-  .print-page {
-    background: #fff;
-    width: 210mm;
-    min-height: 297mm;
-    max-height: 297mm;
-    margin: 0 auto;
-    padding: 20px 22px 36px;
-    box-shadow: none;
-    border: none;
-    display: flex;
-    flex-direction: column;
+  .page {
+    max-width:1200px;
+    margin:0 auto;
+    padding:20px 22px 36px;
   }
 
   /* Header */
@@ -95,6 +83,7 @@
 
   .report-meta {
     text-align:right;
+    min-width: 280px;
   }
 
   .report-title {
@@ -153,7 +142,7 @@
   .metric-card--total .metric-value { color:#3b82f6; }
   .metric-card--vehicles .metric-value { color:#334155; }
 
-  /* Report table - Grid Layout */
+  /* Report table - Grid Layout (3 columns: Vehicle, Owner, Expiring Documents) */
   .report-table {
     width:100%;
     border:1px solid var(--border);
@@ -165,7 +154,7 @@
   .table-head,
   .vehicle-row {
     display:grid;
-    grid-template-columns:18% 20% minmax(0, 47%) 15%;
+    grid-template-columns:18% 20% minmax(0, 62%);
   }
 
   .table-head {
@@ -183,8 +172,7 @@
   .table-head > div,
   .vehicle-cell,
   .owner-cell,
-  .documents-cell,
-  .risk-cell {
+  .documents-cell {
     min-width:0;
   }
 
@@ -203,20 +191,17 @@
 
   .vehicle-cell,
   .owner-cell,
-  .documents-cell,
-  .risk-cell {
+  .documents-cell {
     padding:14px 15px;
   }
 
   .vehicle-cell,
-  .owner-cell,
-  .documents-cell {
+  .owner-cell {
     border-right:1px solid #edf0f4;
   }
 
   .vehicle-cell,
-  .owner-cell,
-  .risk-cell {
+  .owner-cell {
     display:flex;
     align-items:flex-start;
   }
@@ -286,53 +271,24 @@
     background:var(--orange);
   }
 
-  .risk-cell {
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    min-height:100%;
-  }
-
-  .risk-badge {
-    display:inline-flex;
-    align-items:center;
-    gap:7px;
-    padding:6px 10px;
-    border:1px solid #fdba74;
-    background:var(--orange-bg);
-    color:#c2410c;
-    border-radius:6px;
-    font-size:13px;
-    font-weight:650;
-    white-space:nowrap;
-  }
-
-  .risk-badge::before {
-    content:"";
-    width:7px;
-    height:7px;
-    border-radius:50%;
-    background:var(--orange);
-  }
-
-  .risk-badge.yellow {
-    border-color:#f4d35e;
-    background:var(--amber-bg);
-    color:#9a6b00;
-  }
-
-  .risk-badge.yellow::before {
-    background:#eab308;
-  }
-
-  .risk-badge.red {
+  .days-badge.red {
     border-color:#fecaca;
     background:#fef2f2;
     color:#b91c1c;
   }
 
-  .risk-badge.red::before {
+  .days-badge.red .days-dot {
     background:var(--red);
+  }
+
+  .days-badge.yellow {
+    border-color:#f4d35e;
+    background:var(--amber-bg);
+    color:#9a6b00;
+  }
+
+  .days-badge.yellow .days-dot {
+    background:var(--amber);
   }
 
   .print-footer {
@@ -368,19 +324,154 @@
   }
 
   @media (max-width:520px) {
+    .print-page { padding:16px; }
+
+    .report-header {
+      flex-direction:column;
+    }
+
+    .report-meta {
+      text-align:left;
+    }
+
     .summary-bar {
       grid-template-columns:1fr;
     }
 
-    .brand-title { font-size:25px; }
+    .report-table {
+      overflow-x:auto;
+    }
+
+    .table-head,
+    .vehicle-row {
+      min-width:820px;
+    }
   }
 
   @media print {
-    html, body { background: #fff; }
-    .no-print-btn { display: none !important; }
+    @page { size: A4; margin: 12mm; }
+
+    html, body {
+      background:#fff !important;
+      color:#111 !important;
+      font-size:11px;
+    }
+
     .print-page {
       width: 210mm; height: 297mm;
       margin: 0; padding: 20mm 22mm 36mm;
+      box-shadow: none;
+      border: none;
+    }
+
+    .no-print-btn { display: none !important; }
+
+    .report-header {
+      padding-bottom:12px;
+      gap:18px;
+    }
+
+    .brand-title {
+      font-size:23px;
+    }
+
+    .brand-subtitle {
+      font-size:11px;
+      margin-top:5px;
+    }
+
+    .brand-icon {
+      width:31px;
+      height:31px;
+      font-size:16px;
+    }
+
+    .report-title {
+      font-size:15px;
+      margin-bottom:4px;
+    }
+
+    .meta-line {
+      font-size:10px;
+    }
+
+    .metrics {
+      gap:7px;
+      margin:12px 0;
+    }
+
+    .metric-card {
+      min-height:56px;
+      padding:8px 10px;
+      border-radius:6px;
+    }
+
+    .metric-value {
+      font-size:21px;
+    }
+
+    .metric-label {
+      margin-top:4px;
+      font-size:8px;
+    }
+
+    .report-table {
+      border-radius:6px;
+      overflow:visible;
+    }
+
+    .table-head,
+    .vehicle-row {
+      grid-template-columns:18% 20% minmax(0, 62%);
+    }
+
+    .table-head {
+      min-height:32px;
+      font-size:8px;
+    }
+
+    .table-head > div {
+      padding:0 8px;
+    }
+
+    .vehicle-row {
+      break-inside:avoid;
+      page-break-inside:avoid;
+    }
+
+    .vehicle-cell,
+    .owner-cell,
+    .documents-cell {
+      padding:8px;
+    }
+
+    .vehicle-number,
+    .owner-name,
+    .document-name,
+    .document-date {
+      font-size:9px;
+    }
+
+    .document-row {
+      grid-template-columns:minmax(0,1fr) 78px 62px;
+      gap:5px;
+      min-height:28px;
+    }
+
+    .days-badge {
+      padding:3px 5px;
+      border-radius:4px;
+      font-size:8px;
+    }
+
+    .days-dot {
+      width:5px;
+      height:5px;
+    }
+
+    .print-footer {
+      margin-top:7px;
+      font-size:8px;
     }
   }
 
@@ -461,7 +552,6 @@
       <div>Vehicle</div>
       <div>Owner</div>
       <div>Expiring Documents</div>
-      <div>Risk</div>
     </div>
 
     {% for r in results %}
@@ -481,9 +571,9 @@
             <div class="document-name">{{ doc.field }}</div>
             <div class="document-date">{{ doc.expiry.strftime('%d %b %Y') }}</div>
             <div class="days-badge
-              {% if doc.days < 0 %} 
+              {% if doc.days < 0 %} red
               {% elif doc.days <= 7 %} 
-              {% elif doc.days <= 30 %} 
+              {% elif doc.days <= 30 %} yellow
               {% else %}{% endif %}">
               <span class="days-dot"></span>
               {% if doc.days < 0 %}{{ -doc.days }} days overdue
@@ -492,17 +582,6 @@
             </div>
           </div>
           {% endfor %}
-        </div>
-      </div>
-
-      <div class="risk-cell">
-        {% set overall = r.vehicle.overall_status() %}
-        <div class="risk-badge
-          {% if overall == 'status-red' %} red
-          {% elif overall == 'status-orange' %} 
-          {% elif overall == 'status-yellow' %} yellow
-          {% endif %}">
-          {{ overall | replace('status-', '') | title }}
         </div>
       </div>
     </div>
